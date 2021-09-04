@@ -335,7 +335,7 @@ def tracks_to_intervals(comb_data, step_size, progress=True):
     peaks_c2['length'] = peaks_c2['end'] - peaks_c2['start']
     return peaks_c1, peaks_c2
 
-def make_overlap_report(comb_data, peaks_c1, peaks_c2, fraction_c1_permissive, fraction_c2_permissive, progress=True)
+def make_overlap_report(comb_data, peaks_c1, peaks_c2, fraction_c1_permissive, fraction_c2_permissive, progress=True):
     sel_comb_data = comb_data[comb_data['c1_peak'] | comb_data['c2_peak']]
     df_entries = list()
     df_header = [
@@ -458,7 +458,7 @@ def merge_overlapping_intervals(interval_df):
         }))
     return pd.concat(merged_df_list, axis=0)
     
-def fiter_overlaps(peaks_c1, peaks_c2, overlap_df, threshold=.5)
+def fiter_overlaps(peaks_c1, peaks_c2, overlap_df, threshold=.5):
     fractions_c1 = overlap_df.groupby('peak_c1', sort=False)['frac_c1'].sum()
     fractions_c2 = overlap_df.groupby('peak_c2', sort=False)['frac_c2'].sum()
     bad_idx_c1 = fractions_c1.index[fractions_c1 > threshold]

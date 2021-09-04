@@ -21,3 +21,29 @@ and istall the requirements:
 ```
 $ pip install -r requirements.txt
 ```
+
+## Usage
+
+Before the deconvolution the data has to be split up into manageable chunks:
+```
+./sep241prep.py [bed files] --out [jobdata file] --memory [max memory target in GB]
+```
+It is recommendet to use approximatly 300 for `--memory`.
+
+The ouptut of the function reports the number of seperate work chunks
+and suggests susequent calls for the deconvolution.
+
+To produce bigwig files from the deconvolution results run
+```
+./sep241mkbw.py [jobdata file] [chrom sizes file]
+```
+The chomosome sizes file needs to have two clolumns with `chromosome name` and
+`size in bases`
+(s. [bigWIG forma](https://genome.ucsc.edu/goldenPath/help/bigWig.html)).
+
+To call peaks from the deconvolved tracks run:
+```
+./sep241peakcalling.py [jobdata file]
+```
+
+For more information pass `--help` to the respective script.
