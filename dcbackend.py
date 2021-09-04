@@ -547,7 +547,7 @@ def plot_gtf(
 
 class Deconvoluter:
     '''
-    A utility class for cnt241 deconvolution.
+    A utility class for sep241 deconvolution.
     '''
     def __init__(
         self,

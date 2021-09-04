@@ -27,21 +27,21 @@ class SubdivisionError(Exception):
     pass
 
 
-def filter_events(events, blacklist=None, blacklisted_sequences=set(), progress=True):
+def filter_sort_events(events, blacklist=None, blacklisted_sequences=set(), progress=True):
     grouped = events.groupby("seqname")
     if blacklist:
         tb = tabix.open(blacklist)
 
     filtered_list = list()
 
-    logger.info("Removing blacklisted reads.")
+    logger.info("Removing blacklisted reads and sorting.")
     for seqname, local_events in tqdm(grouped, desc="sequence", disable=~progress):
         if seqname in blacklisted_sequences:
             continue
+        local_events = local_events.sort_values("location")
         if not blacklist:
             filtered_list.append(local_events)
             continue
-        local_events = local_events.sort_values("location")
         locations = local_events["location"].values
         n = len(locations)
         blacklisted = np.zeros(n, dtype=bool)
@@ -696,10 +696,9 @@ def main():
     dc = Deconvoluter(fragments_files=fragments_files, show_progress=~args.no_progress)
     len_df = dc.all_fragments()
     all_events = dc.envents_from_intervals(len_df)
-    if args.blacklist or args.blacklisted_seqs:
-        events = filter_events(
-            all_events, args.blacklist, args.blacklisted_seqs, progress=~args.no_progress
-        )
+    events = filter_sort_events(
+        all_events, args.blacklist, args.blacklisted_seqs, progress=~args.no_progress
+    )
     if args.selection_bed:
         bed_intervals = read_bed(args.selection_bed)
         intervalls_small = {
@@ -735,12 +734,12 @@ def main():
 
     Run deconvolution using SLURM:
 
-        sbatch --array=0-{n_wg-1} --mem={args.memory_target}G cnt241deconvolve.py {args.out}
+        sbatch --array=0-{n_wg-1} --mem={args.memory_target}G sep241deconvolve.py {args.out}
 
     Run in bash:
 
         for wc in $(seq 0 {n_wg-1}); do
-            ./cnt241deconvolve.py {args.out} --workchunk $wc
+            ./sep241deconvolve.py {args.out} --workchunk $wc
         done
 
     Please consider adjusting and passing the following additional arguments:

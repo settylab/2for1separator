@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-#SBATCH --job-name=cnt241deconv
+#SBATCH --job-name=sep241deconv
 #SBATCH --cpus-per-task=16
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -154,8 +154,8 @@ if __name__ == "__main__":
         help="""Directory to compile code in.
             Should be different between parallel run instances
             and can be delted after run.
-            (default=cnt241tmp or if he environment variable TMPDIR is set
-            default=TMPDIR/cnt241tmp)""",
+            (default=sep241tmp or if he environment variable TMPDIR is set
+            default=TMPDIR/sep241tmp)""",
         type=str,
         metavar="dir",
     )
@@ -211,9 +211,9 @@ tmpdir = os.getenv("TMPDIR")
 if args.compiledir is not None:
     compileDir = args.compiledir
 elif tmpdir is None:
-    compileDir = "./cnt241tmp"
+    compileDir = "./sep241tmp"
 else:
-    compileDir = os.path.join(tmpdir, "cnt241tmp")
+    compileDir = os.path.join(tmpdir, "sep241tmp")
 setFlag("base_compiledir", compileDir)
 # setFlag("blas.ldflags", "'-L/usr/lib/ -lblas'")
 
