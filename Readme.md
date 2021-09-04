@@ -19,7 +19,7 @@ may be released soon.
 Please make sure `python` points to a Python 3.9 interpreter
 and istall the requirements:
 ```
-$ pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Usage
