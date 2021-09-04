@@ -880,6 +880,8 @@ class Deconvoluter:
             )
         return pl, anno_pl
     
+    file_length = {}
+    
     def _all_of_file(self, file, rep):
         h = (
             ('f', '_all_of_file'),
