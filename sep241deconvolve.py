@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-#SBATCH --job-name=sep241deconv
+#SBATCH --job-name=2for1seperator
 #SBATCH --cpus-per-task=16
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import plotnine as p9
 from tqdm.auto import tqdm
+import multiprocessing
 
 logger = logging.getLogger("2for1seperator")
 
@@ -358,10 +359,14 @@ def make_model(events, cov_functions, dirichlet_priors, length_comps, mlevel=0, 
 
 
 def main(args):
-    if args.cores and args.cores > 0:
-        logger.info("Limiting computation to %i cores.", args.cores)
-        threadpool_limits(limits=int(args.cores))
-        os.environ["NUMEXPR_MAX_THREADS"] = str(args.cores)
+    if not args.cores:
+        cores = multiprocessing.cpu_count()
+        logger.info("Detecting %s compute cores.", cores)
+    else:
+        cores = args.cores
+    logger.info("Limiting computation to %i cores.", cores)
+    threadpool_limits(limits=int(cores))
+    os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
     logger.info("Prepairing dirichlet prior.")
     c1_prior = np.array(args.c1_dirichlet_prior)
     if len(c1_prior) < 2:

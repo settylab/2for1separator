@@ -11,6 +11,7 @@ import pyBigWig
 from dcbackend import logger, setup_logging
 from dcbackend import read_job_data, read_results
 from dcbackend import check_length_distribution_flip
+from dcbackend import MissingData
 
 def parse_args():
     desc = "Prepair CUT&TAG 2for1 deconvolution."
@@ -76,6 +77,11 @@ def parse_args():
     parser.add_argument(
         "--no-progress",
         help="Do not show progress.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--force",
+        help="Make bigwigs even if some results are missing.",
         action="store_true",
     )
     parser.add_argument(
@@ -157,8 +163,8 @@ def make_bigwigs(
     for name, dat in tqdm(
         workdata.iterrows(), total=len(workdata), desc="intervals", disable=~progress
     ):
-        wg = dat["workgroup"]
-        maxlle = map_results.get(dat["workgroup"], None)
+        wg = dat["workchunk"]
+        maxlle = map_results.get(dat["workchunk"], None)
         if maxlle is None:
             continue
         if f"f_c1_{name}" not in maxlle.keys():
@@ -232,11 +238,17 @@ def main():
     logger.info("Reading jobdata.")
     workdata = read_job_data(args.jobdata)
     logger.info("Reading deconvolution results.")
-    map_results = read_results(args.jobdata, workdata, progress=~args.no_progress)
+    try:
+        map_results = read_results(args.jobdata, workdata, progress=~args.no_progress, error=~args.force)
+    except MissingData:
+        raise MissingData(
+            "Results are missing. Complete missing work chunks or pass --force to "
+            "prodce bigwig files regardless."
+        )
 
     if not args.no_check:
         logger.info("Checking length distribution flip.")
-        check_length_distribution_flip(map_results)
+        check_length_distribution_flip(workdata, map_results)
         
     if args.out is None:
         out_path, old_file = os.path.split(args.jobdata)

@@ -688,10 +688,14 @@ def main():
     if not os.path.isdir(out_path):
         logger.info('Making directory %s', out_path)
         os.mkdir(out_path)
-    if args.cores and args.cores > 0:
-        logger.info("Limiting computation to %i cores.", args.cores)
-        threadpool_limits(limits=int(args.cores))
-        os.environ["NUMEXPR_MAX_THREADS"] = str(args.cores)
+    if not args.cores:
+        cores = multiprocessing.cpu_count()
+        logger.info("Detecting %s compute cores.", cores)
+    else:
+        cores = args.cores
+    logger.info("Limiting computation to %i cores.", cores)
+    threadpool_limits(limits=int(cores))
+    os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
     fragments_files = {f"file {i}": file for i, file in enumerate(args.fragment_files)}
     dc = Deconvoluter(fragments_files=fragments_files, show_progress=~args.no_progress)
     len_df = dc.all_fragments()
