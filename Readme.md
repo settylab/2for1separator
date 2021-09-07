@@ -7,7 +7,7 @@ originate from one target or the other. The result is a set of cut density
 tracks that represent the estimated number of cuts induced by the two
 antibodies used in the CUT&Tag2for1 experiment.
 
-![Overview shcmenatic](overview.jpg?raw=true "Overview")
+![Schmenatic](schematic.jpg?raw=true "Schematic")
 
 ## Disclaimer
 
