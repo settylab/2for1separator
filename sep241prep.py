@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 from KDEpy import FFTKDE
+import multiprocessing
 
 from dcbackend import Deconvoluter, LevelSet
 from dcbackend import logger, setup_logging
