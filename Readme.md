@@ -1,10 +1,13 @@
 # 2for1separator
 
-2for1 separator is an algorithm to deconvolve CUT&Tag2for1 data. It uses differences in the fragment length distributions of the two targets and teh proximity of chromatin
-cuts to estimate the probability for each cut to originate from one
-target or the other. The result is a set of cut density tracks
-that represent the estimated number of cuts induced by the two
+2for1 separator is an algorithm to deconvolve CUT&Tag2for1 data.  It uses
+differences in the fragment length distributions of the two targets and the
+proximity of chromatin cuts to estimate the probability for each cut to
+originate from one target or the other. The result is a set of cut density
+tracks that represent the estimated number of cuts induced by the two
 antibodies used in the CUT&Tag2for1 experiment.
+
+![Overview shcmenatic](overview.jpg?raw=true "Overview")
 
 ## Disclaimer
 
