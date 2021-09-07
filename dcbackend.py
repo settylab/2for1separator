@@ -50,7 +50,7 @@ def length_dist(weights, sigmas=[.4, .18, .115, .085], modes=[70, 200, 400, 600]
     return np.sum(np.stack(dists), axis=0)
 
 def posterior_length_dists(map_results, x=np.linspace(1, 800, 500), prior=True, progress=False):
-    for workchunks, maxlle in tqdm(
+    for workchunk, maxlle in tqdm(
         map_results.items(),
         desc='work chunk',
         total=len(map_results),
@@ -60,14 +60,14 @@ def posterior_length_dists(map_results, x=np.linspace(1, 800, 500), prior=True, 
             'density':length_dist(maxlle['weight_c1']),
             'length':x,
             'from':'Posterior c1',
-            'workchunk':str(workchunks),
+            'workchunk':str(workchunk),
         })
         df_list.append(ndfp)
         ndfk = pd.DataFrame({
             'density':length_dist(maxlle['weight_c2']),
             'length':x,
             'from':'Posterior c2',
-            'workchunk':str(workchunks),
+            'workchunk':str(workchunk),
         })
         df_list.append(ndfk)
     if prior and (args := maxlle.get('args')):
@@ -95,7 +95,7 @@ def posterior_length_dists(map_results, x=np.linspace(1, 800, 500), prior=True, 
 
 def check_length_distribution_flip(map_results, threshold=.9):
     """Look for flip between posterior length distributions.
-    
+
     threshold: Pearson corrleation threshold for difference
         between c1 and c2 (default=.9).
     """
@@ -109,7 +109,7 @@ def check_length_distribution_flip(map_results, threshold=.9):
         c2 = df[df['from']==components[2]].set_index('length')['density']
         diffs[wc] = c1-c2
     diffs = pd.DataFrame(diffs)
-    
+
     usual_diff = diffs.median(axis=1)
     diff_coors = diffs.corrwith(usual_diff)
     idx_flipped = diff_coors < threshold
@@ -117,12 +117,12 @@ def check_length_distribution_flip(map_results, threshold=.9):
     if any(idx_flipped):
         wg_string = ','.join([str(wg) for wg in bad_wgs])
         logger.warn(f'The length distributions for the following workgoups are flipped: {wg_string}')
-        logger.warn('Consider rerunning these workchunkss with the following Dirichlet priors:')
+        logger.warn('Consider rerunning these workchunks with the following Dirichlet priors:')
 
     w_c1_posterior = np.zeros(len(w_c1_inferred))
     w_c2_posterior = np.zeros(len(w_c2_inferred))
     for name, dat in workdata.iterrows():
-        wg = dat['workchunks']
+        wg = dat['workchunk']
         if wg in bad_wgs or wg not in map_results:
             continue
         n_cuts = len(dat['cuts'])
@@ -136,7 +136,7 @@ def check_length_distribution_flip(map_results, threshold=.9):
         logger.warn('--c2-dirichlet-prior ' + ' '.join([str(int(w)) for w in w_c2_posterior]))
     else:
         logger.info('No flipped length distributions found.')
-    
+
 
 def read_job_data(jobdata_file):
     return pd.read_pickle(jobdata_file)
@@ -145,15 +145,15 @@ def read_job_data(jobdata_file):
 def read_results(jobdata_file, workdata, progress=True):
     map_results = dict()
     misses = list()
-    for workchunks in tqdm(
-        workdata["workchunks"].unique(), disable=~progress, desc="work chunk"
+    for workchunk in tqdm(
+        workdata["workchunk"].unique(), disable=~progress, desc="work chunk"
     ):
-        filename = os.path.splitext(jobdata_file)[0] + f"_wg-{workchunks}.pkl"
+        filename = os.path.splitext(jobdata_file)[0] + f"_wg-{workchunk}.pkl"
         try:
             with open(filename, "rb") as fl:
-                map_results[workchunks] = pickle.load(fl)
+                map_results[workchunk] = pickle.load(fl)
         except FileNotFoundError:
-            misses.append(str(workchunks))
+            misses.append(str(workchunk))
     if misses:
         logger.warn(
             "Results of the following work chunks are missing: " + ",".join(misses)
@@ -163,7 +163,7 @@ def read_results(jobdata_file, workdata, progress=True):
 class LevelSet:
     '''
     Used by the gtf drawing tool.
-    
+
     Remembers levels occupied by intervals if called
     for all intervalls sorted by theire start.
     Ensures a minimal  paddingdistance between intervals in
@@ -189,7 +189,7 @@ class LevelSet:
 
     def reset(self):
         self.occupied_levels = dict()
-        
+
 
 def igv_plot(
     df,
@@ -206,7 +206,7 @@ def igv_plot(
 ):
     '''
     Draws an IGV-like plot. Used by Multitool class.
-    
+
     Parameter
     ---------
     df: DataFrame with reads and columns 'start', 'stop' and
@@ -327,7 +327,7 @@ def igv_plot(
         )
     else:
         pl = pl + p9.scale_fill_hue()
-        
+
     if group is not None:
         pl += p9.facet_grid(
             f'{group} ~ .',
@@ -339,9 +339,9 @@ def igv_plot(
     else:
         pl += p9.labs(y='count')
     return pl
-        
-    
-    
+
+
+
 def plot_gtf(
     gtf_dataframe,
     draw_genes = True,
@@ -354,7 +354,7 @@ def plot_gtf(
 ):
     '''
     Draw features of a gtf DataFrame. Used by Multitool.
-    
+
     Parameter
     ---------
     gtf_dataframe: A pandas data frame from a gtf parsed by gtfparse.
@@ -562,8 +562,8 @@ class Deconvoluter:
         self.region_format = re.compile(pattern)
         self._cache = dict()
         self.show_progress = show_progress
-    
-    
+
+
     def plot_frag_length(self, log_scale=True):
         alen = self.all_fragments()
         pl = (
@@ -575,7 +575,7 @@ class Deconvoluter:
         if log_scale:
             pl = pl + p9.scale_y_log10()
         return pl
-    
+
     def plot_genes(self, genes, x='pseudotime', points=True, regression=True, std=True):
         if isinstance(genes, str):
             genes = genes.split(',')
@@ -607,18 +607,18 @@ class Deconvoluter:
     @property
     def gtf_file(self):
         return self._gtf_file
-    
+
     @gtf_file.setter
     def gtf_file(self, gtf_file):
         if gtf_file is not None:
             logger.info('Parsing gtf file...')
             self.gtf = read_gtf(gtf_file)
         self._gtf_file = gtf_file
-        
+
     @property
     def gtf(self):
         return self._gtf
-    
+
     @gtf.setter
     def gtf(self, gtf):
         gtf['stranded_start'] = np.where(
@@ -629,8 +629,8 @@ class Deconvoluter:
         )
         self.gene_names = set(gtf['gene_name'].unique())
         self._gtf = gtf
-        
-    
+
+
     def _interpret_feature(self, feature):
         is_region = self.region_format.match(feature)
         if is_region:
@@ -655,7 +655,7 @@ class Deconvoluter:
             dat = self.gtf.iloc[idx[0], :][['seqname', 'start', 'end']]
             return dat.values.ravel()
         raise Exception(f'Feature not recognized: {feature}')
-        
+
     def get_fragments(
         self,
         feature,
@@ -678,7 +678,7 @@ class Deconvoluter:
         if _return_bounds:
             return atac_intervals, all_evens, lower_bound, upper_bound
         return atac_intervals, all_evens
-    
+
     def plot_igv(
         self,
         feature,
@@ -703,7 +703,7 @@ class Deconvoluter:
     ):
         '''
         A plot similar to the IGV visualization of ATAC reads.
-        
+
         Parameter
         ---------
         feature: A gene, genomic interval or df of ATAC reads.
@@ -743,7 +743,7 @@ class Deconvoluter:
             facet_scales = 'fixed'
         else:
             raise ValueError(f'Argument for y_scale unknown: {y_scale}')
-            
+
         if color in events.columns and group in events.columns:
             # we do not need to merge
             obs_from = None
@@ -777,7 +777,7 @@ class Deconvoluter:
                 events[color] = pd.Categorical(events[color], categories=sorted_cats)
         elif group is not None:
             presorted_group_cats = events[group].unique()
-                
+
         relabeling = dict()
         if group_nucs:
             sorted_types = sorted(events['read_type'].unique(), reverse=True)
@@ -793,7 +793,7 @@ class Deconvoluter:
                         relabeling.update({f'{ct} {t}':t for t in sorted_types})
             group = '_igv_group'
             events[group] = pd.Categorical(grouped, categories=sorted_group_cats)
-            
+
         pl = igv_plot(
             events,
             group=group,
@@ -812,7 +812,7 @@ class Deconvoluter:
             + p9.coord_cartesian(xlim = (lower_bound, upper_bound))
             + p9.ggtitle(f'{seq}:{lower_bound:,}-{upper_bound:,}')
         )
-        
+
         if draw_peaks:
             atac = self.atac_ad.var
             peaks_idx = (
@@ -838,7 +838,7 @@ class Deconvoluter:
             )
         if not anno_plot:
             return pl
-        
+
         #if seq.startswith('chr'):
         #    seq = seq[3:]
         idx = (
@@ -879,9 +879,9 @@ class Deconvoluter:
                 inherit_aes=False
             )
         return pl, anno_pl
-    
+
     file_length = {}
-    
+
     def _all_of_file(self, file, rep):
         h = (
             ('f', '_all_of_file'),
@@ -913,7 +913,7 @@ class Deconvoluter:
                 reads.append((rep, seq, start, end))
         self._cache[h] = reads
         return reads
-        
+
     def all_fragments(self):
         reads = list()
         all_lengths = list()
@@ -925,8 +925,8 @@ class Deconvoluter:
         logger.info('Calculating read lengths.')
         result_df['length'] = result_df['end'] - result_df['start']
         return result_df
-    
-    
+
+
     def get_intervals(self, region, nuc_size=120):
         intervals = list()
         for rep, fragments_file in self.fragments_files.items():
@@ -945,7 +945,7 @@ class Deconvoluter:
         id_vars = set(interval_df.columns) - {'start', 'end'}
         df = interval_df.melt(id_vars=id_vars, value_name='location')
         return df
-    
+
     def count(self, bins, index_name=None, normalize=False, count_prior=0):
         midpoints = (bins[1:]+bins[:-1])/2
         def do_count(data):
@@ -959,10 +959,10 @@ class Deconvoluter:
                 result /= result.sum()
             return result
         return do_count
-    
+
     def _length_hist_bins(self, maximum, bin_width=1, padding=.5):
         return np.arange(padding, maximum+padding+bin_width, bin_width)
-    
+
     def hist_from_df(self, len_df, bin_width=1, normalize=True,
                      color='from', count_prior=0, bins=None):
         if bins is None:
@@ -974,8 +974,8 @@ class Deconvoluter:
         else:
             gdf.name = 'count'
         return gdf
-        
-    
+
+
     def length_histograms(self, bin_width=1, normalize=True,
                           color='from', count_prior=0, bins=None):
         len_df = self.all_fragments()
@@ -987,7 +987,7 @@ class Deconvoluter:
             count_prior=count_prior,
             bins=bins,
         )
-    
+
     def plot_length_hist(self, gdf=None, bin_width=1, normalize=True,
                          color='from', count_prior=0, bins=None):
         if gdf is None:
@@ -1006,4 +1006,4 @@ class Deconvoluter:
             + p9.ggtitle(f'length bin width {bin_width}')
         )
         return pl
-    
+
