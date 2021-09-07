@@ -7,4 +7,5 @@ pyBigWig==0.3.18
 pytabix==0.1
 threadpoolctl==2.2.0
 plotnine==0.8.0
-sklearn==0.24.2
+scikit-learn==0.24.2
+gtfparse==1.2.1
