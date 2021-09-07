@@ -30,6 +30,13 @@ It is recommended to use approximatly 300 for `--memory`.
 
 The ouptut of the function reports the number of seperate work chunks
 and suggests susequent calls for the deconvolution.
+Note that if memory resources are exhausted, deconvolution jobs
+may be cancled by slurm or the operating system and subsequent
+results missing. The downstream scripts will test for missing
+results and report a comma sperated list of respective work chunk
+numbers. If you are using slurm you can rerun the slurm jobs of only
+the specified jobs by passing the list with the `--array=` parameter
+of the `sbatch` command.
 
 To produce bigwig files from the deconvolution results run
 ```
@@ -45,3 +52,14 @@ To call peaks from the deconvolved tracks run:
 ```
 
 For more information pass `--help` to the respective script.
+
+## Visualization
+
+Output files are bigwigs and bed-files. These can be visualised
+with softwra etools such as the
+[IGV Browser](https://software.broadinstitute.org/software/igv/)
+or
+[JBrowser 2](https://jbrowse.org/jb2/).
+Vizualization of intermediate results are currently only possible
+if intermediate function calls within the supplied scripts are
+reproduced in a python environment.

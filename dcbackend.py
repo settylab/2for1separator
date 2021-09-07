@@ -23,6 +23,12 @@ from KDEpy import FFTKDE
 
 from gtfparse import read_gtf
 
+class NoData(Exception):
+    pass
+
+class MissingData(Exception):
+    pass
+
 logger = logging.getLogger("2for1seperator")
 
 
@@ -178,12 +184,6 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
 
 def read_job_data(jobdata_file):
     return pd.read_pickle(jobdata_file)
-
-class NoData(Exception):
-    pass
-
-class MissingData(Exception):
-    pass
 
 def read_results(jobdata_file, workdata, progress=True, error=True):
     map_results = dict()
