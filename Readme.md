@@ -1,5 +1,7 @@
 # 2for1separator
 
+[![DOI](https://zenodo.org/badge/402908753.svg)](https://zenodo.org/badge/latestdoi/402908753)
+
 2for1 separator is an algorithm to deconvolve CUT&Tag2for1 data.  It uses
 differences in the fragment length distributions of the two targets and the
 proximity of chromatin cuts to estimate the probability for each cut to
