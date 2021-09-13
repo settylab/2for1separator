@@ -14,7 +14,7 @@ antibodies used in the CUT&Tag2for1 experiment.
 ## Disclaimer
 
 This is an alpha version with very high memory demand of up to
-300 GB. An new version, that aims to reduce the resource demand,
+300 GB. A new version, that aims to reduce the resource demand,
 will be released soon.
 
 ## Installation
@@ -37,7 +37,7 @@ The ouptut of the function reports the number of seperate work chunks
 and suggests susequent calls for the deconvolution.
 Note that if memory resources are exhausted, deconvolution jobs
 may be cancled by slurm or the operating system and subsequent
-results missing. The downstream scripts will test for missing
+results will be missing. The downstream scripts will test for missing
 results and report a comma sperated list of respective work chunk
 numbers. If you are using slurm you can rerun the slurm jobs of only
 the specified jobs by passing the list with the `--array=` parameter
