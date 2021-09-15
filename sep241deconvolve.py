@@ -20,6 +20,7 @@ import multiprocessing
 
 logger = logging.getLogger("2for1seperator")
 
+
 def setup_logging(level, logfile=None):
     logger.propagate = False
     logging.basicConfig(
@@ -289,7 +290,9 @@ def format_cuts(locations_ds):
     return unique_locations, log_loc_weight, interleave_index
 
 
-def make_model(events, cov_functions, dirichlet_priors, length_comps, mlevel=0, constraint=False):
+def make_model(
+    events, cov_functions, dirichlet_priors, length_comps, mlevel=0, constraint=False
+):
     logger.info("Compiling model.")
     with pm.Model() as model:
         cov_c1 = cov_functions[0]
@@ -303,25 +306,29 @@ def make_model(events, cov_functions, dirichlet_priors, length_comps, mlevel=0, 
         w_c2 = dirichlet_priors[1]
         weights_c2 = pm.Dirichlet("weight_c2", w_c2, testval=w_c2 / np.sum(w_c2))
         l_like_c2 = pm.Mixture.dist(w=weights_c2, comp_dists=length_comps[: len(w_c2)])
-        
+
         if constraint:
-            logger.debug('Compiling constraint.')
+            logger.debug("Compiling constraint.")
             means = at.stack([a.mean for a in length_comps])
             mean_prior_length_c1 = means.dot(w_c1 / np.sum(w_c1)).eval()
             mean_prior_length_c2 = means.dot(w_c2 / np.sum(w_c2)).eval()
             if mean_prior_length_c1 > mean_prior_length_c2:
-                logger.info('Constraining component 1 to have larger fragments on average.')
+                logger.info(
+                    "Constraining component 1 to have larger fragments on average."
+                )
                 larger_weights = weights_c1
                 smaller_weights = weights_c2
             else:
-                logger.info('Constraining component 2 to have larger fragments on average.')
+                logger.info(
+                    "Constraining component 2 to have larger fragments on average."
+                )
                 larger_weights = weights_c2
                 smaller_weights = weights_c1
-            length_diff = means.dot(larger_weights) - means.dot(smaller_weights),
-            const = pm.Potential('length_mode_constraint', pm.math.switch(
-                length_diff > 0,
-                0, -length_diff*10
-            ))
+            length_diff = (means.dot(larger_weights) - means.dot(smaller_weights),)
+            const = pm.Potential(
+                "length_mode_constraint",
+                pm.math.switch(length_diff > 0, 0, -length_diff * 10),
+            )
 
         for name, dat in events.iterrows():
 
@@ -405,17 +412,29 @@ def main(args):
         len(events),
         f"{workload:,.3f}",
     )
-    length_comps = get_length_dist_modes(args.length_dist_modes, args.length_dist_mode_sds)
+    length_comps = get_length_dist_modes(
+        args.length_dist_modes, args.length_dist_mode_sds
+    )
     try:
-        model = make_model(events, cov_functions, dirichlet_priors,
-                           length_comps, constraint=args.constraint)
+        model = make_model(
+            events,
+            cov_functions,
+            dirichlet_priors,
+            length_comps,
+            constraint=args.constraint,
+        )
     except Exception as e:
         logger.info(
             "First compilition attempt failed likely due to pymc3 mixture distribution bug."
         )
         length_comps = get_length_dist_modes()
-        model = make_model(events, cov_functions, dirichlet_priors,
-                           length_comps, constraint=args.constraint)
+        model = make_model(
+            events,
+            cov_functions,
+            dirichlet_priors,
+            length_comps,
+            constraint=args.constraint,
+        )
     logger.info("Computing MAP.")
     with model:
         maxlle = pm.find_MAP()
@@ -425,6 +444,7 @@ def main(args):
     with open(out_path, "wb") as fl:
         pickle.dump(maxlle, fl, protocol=pickle.HIGHEST_PROTOCOL)
     logger.info("Finished successfully.")
-    
+
+
 if __name__ == "__main__":
     main(args)
