@@ -49,7 +49,7 @@ To produce bigwig files from the deconvolution results run
 ```
 The chomosome sizes file needs to have two columns with `chromosome name` and
 `size in bases`
-(see [bigWIG forma](https://genome.ucsc.edu/goldenPath/help/bigWig.html)).
+(see [bigWIG format](https://genome.ucsc.edu/goldenPath/help/bigWig.html)).
 
 To call peaks from the deconvolved tracks run:
 ```
