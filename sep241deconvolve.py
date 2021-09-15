@@ -427,7 +427,10 @@ def main(args):
         logger.info(
             "First compilition attempt failed likely due to pymc3 mixture distribution bug."
         )
-        length_comps = get_length_dist_modes()
+        length_comps = get_length_dist_modes(
+            args.length_dist_modes,
+            args.length_dist_mode_sds,
+        )
         model = make_model(
             events,
             cov_functions,
