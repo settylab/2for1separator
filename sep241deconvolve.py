@@ -261,12 +261,14 @@ def get_cov_functions(c1_cov_string, c2_cov_string):
 
 
 def get_length_dist_modes(modes=[70, 200, 400, 600], sigmas=[0.29, 0.18, 0.15, 0.085]):
-    mus = [np.log(modes[i]) + (s ** 2) for i, s in enumerate(sigmas)]
-    length_comps = list()
-    for i in range(len(mus)):
-        mode = pm.Lognormal.dist(mus[i], sigma=sigmas[i], testval=modes[i])
-        length_comps.append(mode)
-    return length_comps
+    def generator():
+        mus = [np.log(modes[i]) + (s ** 2) for i, s in enumerate(sigmas)]
+        length_comps = list()
+        for i in range(len(mus)):
+            mode = pm.Lognormal.dist(mus[i], sigma=sigmas[i], testval=modes[i])
+            length_comps.append(mode)
+        return length_comps
+    return generator
 
 
 def format_cuts(locations_ds):
@@ -291,10 +293,12 @@ def format_cuts(locations_ds):
 
 
 def make_model(
-    events, cov_functions, dirichlet_priors, length_comps, mlevel=0, constraint=False
+    events, cov_functions, dirichlet_priors, length_comps_gen, mlevel=0, constraint=False
 ):
     logger.info("Compiling model.")
     with pm.Model() as model:
+        length_comps = length_comps_gen()
+
         cov_c1 = cov_functions[0]
         gp_c1 = pm.gp.Latent(mean_func=pm.gp.mean.Constant(mlevel), cov_func=cov_c1)
         w_c1 = dirichlet_priors[0]
@@ -324,7 +328,7 @@ def make_model(
                 )
                 larger_weights = weights_c2
                 smaller_weights = weights_c1
-            length_diff = (means.dot(larger_weights) - means.dot(smaller_weights),)
+            length_diff = means.dot(larger_weights) - means.dot(smaller_weights)
             const = pm.Potential(
                 "length_mode_constraint",
                 pm.math.switch(length_diff > 0, 0, -length_diff * 10),
@@ -412,32 +416,16 @@ def main(args):
         len(events),
         f"{workload:,.3f}",
     )
-    length_comps = get_length_dist_modes(
+    length_comps_gen = get_length_dist_modes(
         args.length_dist_modes, args.length_dist_mode_sds
     )
-    try:
-        model = make_model(
-            events,
-            cov_functions,
-            dirichlet_priors,
-            length_comps,
-            constraint=args.constraint,
-        )
-    except Exception as e:
-        logger.info(
-            "First compilition attempt failed likely due to pymc3 mixture distribution bug."
-        )
-        length_comps = get_length_dist_modes(
-            args.length_dist_modes,
-            args.length_dist_mode_sds,
-        )
-        model = make_model(
-            events,
-            cov_functions,
-            dirichlet_priors,
-            length_comps,
-            constraint=args.constraint,
-        )
+    model = make_model(
+        events,
+        cov_functions,
+        dirichlet_priors,
+        length_comps_gen,
+        constraint=args.constraint,
+    )
     logger.info("Computing MAP.")
     with model:
         maxlle = pm.find_MAP()
