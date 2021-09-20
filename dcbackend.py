@@ -171,9 +171,9 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
             
                 jobs=%s
                 sbatch --mem=[max memory] --array=$jobs sep241deconvolve.py \\
-                --c1-dirichlet-prior %s \\
-                --c2-dirichlet-prior %s \\
-                [additional parameters]
+                    --c1-dirichlet-prior %s \\
+                    --c2-dirichlet-prior %s \\
+                    [additional parameters]
                 """,
             wg_string, post_str_c1, post_str_c2,
             wg_string, post_str_c1, post_str_c2,
