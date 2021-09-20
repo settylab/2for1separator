@@ -51,10 +51,14 @@ The chomosome sizes file needs to have two columns with `chromosome name` and
 `size in bases`
 (see [bigWIG format](https://genome.ucsc.edu/goldenPath/help/bigWig.html)).
 
-To call peaks from the deconvolved tracks run:
+The produced bigWIG files may be used for downstream analysis such as peak
+calling. To use the 2for1seperator cut-likelyhood-based peak calling
+with overlap idendification run:
 ```
 ./sep241peakcalling.py [jobdata pkl file]
 ```
+Note, that `sep241peakcalling.py` does not required the prior conversion
+to bigWIG but instead uses the raw deconvolution output.
 
 For more information pass `--help` to the respective script.
 
