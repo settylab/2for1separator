@@ -331,7 +331,7 @@ def make_model(
             length_diff = means.dot(larger_weights) - means.dot(smaller_weights)
             const = pm.Potential(
                 "length_mode_constraint",
-                pm.math.switch(length_diff > 0, 0, -length_diff * 10),
+                pm.math.switch(length_diff > 0, 0, -length_diff * 1e5),
             )
 
         for name, dat in events.iterrows():
