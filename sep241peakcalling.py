@@ -225,16 +225,25 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
 def interpolate(
     workdata, map_results, c1_sigma, c2_sigma, step_size, cores=8, progress=True
 ):
-    logger.info("Splitting data.")
+    logger.info("Splitting data into intervals.")
     jobs, signal_c1_list_global, signal_c2_list_global = make_interpolation_jobs(
         workdata, map_results, c1_sigma, c2_sigma, step_size
     )
     results_list = list()
-    logger.info("Computing.")
+    if c1_sigma or c2_sigma:
+        if not c1_sigma:
+            smooth_msg = 'c2'
+        elif not c1_sigma:
+            smooth_msg = 'c1'
+        else:
+            smooth_msg = 'c1 and c2'
+    else:
+        smooth_msg = 'none'
+    logger.info("Interpolating + smoothening %s.", smooth_msg)
     with threadpool_limits(limits=1):
         with multiprocessing.Pool(cores) as pool:
             for df in tqdm(
-                pool.imap(interpolate_entry, jobs),
+                pool.imap(interpolate_entry, jobs, 10),
                 total=len(jobs),
                 disable=~progress,
                 desc="intervals",
@@ -268,7 +277,7 @@ def target_fractions(comb_data, fraction_in_peaks):
     fraction_c1 = fraction_in_peaks * total_c1 / total
     fraction_c2 = fraction_in_peaks * total_c2 / total
     logger.info(
-        f"Estimated a total of {fraction_c1:.1%} c1 and {fraction_c2:.1%} c2 cuts in peaks."
+        f"Estimating a total of {fraction_c1:.1%} c1 and {fraction_c2:.1%} c2 cuts in peaks."
     )
     return fraction_c1, fraction_c2, fraction_c1_permissive, fraction_c2_permissive
 
@@ -293,55 +302,48 @@ def mark_peaks(
 
     bound_c1 = np.quantile(np.hstack(signal_c1_list_global), 1 - fraction_c1)
     if "c1 smooth" in comb_data.keys():
-        comb_data["c1 mean"] = np.mean(comb_data.loc[:, ["c1", "c1 smooth"]], axis=1)
+        logger.info("Averaging original and smoothed signal of c1.")
+        comb_data["c1 mean"] = np.mean(comb_data.loc[:, ["c1", "c1 smooth"]].values, axis=1)
         comb_data["c1_peak"] = (comb_data["c1 mean"] > bound_c1) | (
             comb_data["c1 smooth"] > bound_c1
         )
     else:
         comb_data["c1_peak"] = comb_data["c1"] > bound_c1
     fraction_selected = comb_data["c1_peak"].sum() / len(comb_data["c1_peak"])
-    msg = f"Component 1: {fraction_selected:.2%} of intervalls"
+    msg = f"c1: {fraction_selected:.2%} of intervalls"
     if work_coverage:
         msg += f" and {work_coverage*fraction_selected:.2%} of genome selected."
-    logger.debug(msg)
-    idx = np.insert(comb_data["c1_peak"].values.astype(int), 0, 0)
-    indicator = np.diff(idx)
-    comb_data["c1_peak_number"] = np.cumsum(indicator == 1)
-    comb_data["c1_peak_name"] = (
-        comb_data["interval"]
-        + "_"
-        + comb_data["c1_peak_number"].astype(str)
-        + "_"
-        + comb_data["c1_peak"].astype(str)
-    )
+    logger.info(msg)
 
     bound_c2 = np.quantile(np.hstack(signal_c2_list_global), 1 - fraction_c2)
     if "c2 smooth" in comb_data.keys():
-        comb_data["c2 mean"] = np.mean(comb_data.loc[:, ["c2", "c2 smooth"]], axis=1)
+        logger.info("Averaging original and smoothed signal of c2.")
+        comb_data["c2 mean"] = np.mean(comb_data.loc[:, ["c2", "c2 smooth"]].values, axis=1)
         comb_data["c2_peak"] = (comb_data["c2 mean"] > bound_c2) | (
             comb_data["c2 smooth"] > bound_c2
         )
     else:
         comb_data["c2_peak"] = comb_data["c2"] > bound_c2
     fraction_selected = comb_data["c2_peak"].sum() / len(comb_data["c2_peak"])
-    msg = f"Component 2: {fraction_selected:.2%} of intervalls"
+    msg = f"c2: {fraction_selected:.2%} of intervalls"
     if work_coverage:
         msg += f" and {work_coverage*fraction_selected:.2%} of genome selected."
-    logger.debug(msg)
-    idx = np.insert(comb_data["c2_peak"].values.astype(int), 0, 0)
-    indicator = np.diff(idx)
-    comb_data["c2_peak_number"] = np.cumsum(indicator == 1)
-    comb_data["c2_peak_name"] = (
-        comb_data["interval"]
-        + "_"
-        + comb_data["c2_peak_number"].astype(str)
-        + "_"
-        + comb_data["c2_peak"].astype(str)
-    )
+    logger.info(msg)
     return comb_data
 
 
 def track_to_interval(loc_comb_data, comp_name, step_size, seqname):
+    idx = np.insert(loc_comb_data[f"{comp_name}_peak"].values.astype(int), 0, 0)
+    indicator = np.diff(idx)
+    loc_comb_data[f"{comp_name}_peak_number"] = np.cumsum(indicator == 1)
+    loc_comb_data[f"{comp_name}_peak_name"] = (
+        loc_comb_data["interval"]
+        + "_"
+        + loc_comb_data[f"{comp_name}_peak_number"].astype(str)
+        + "_"
+        + loc_comb_data[f"{comp_name}_peak"].astype(str)
+    )
+
     peak_location_df = loc_comb_data[
         loc_comb_data[f"{comp_name}_peak"].values
     ].set_index("location")
@@ -361,17 +363,30 @@ def track_to_interval(loc_comb_data, comp_name, step_size, seqname):
     ).sort_values("start")
     return peaks
 
+def both_tracks_to_intervlas(job):
+    loc_comb_data, step_size, seqname = job
+    peaks_c1 = track_to_interval(loc_comb_data, "c1", step_size, seqname)
+    peaks_c2 = track_to_interval(loc_comb_data, "c2", step_size, seqname)
+    return peaks_c1, peaks_c2
 
-def tracks_to_intervals(comb_data, step_size, progress=True):
+
+def tracks_to_intervals(comb_data, step_size, cores=8, progress=True):
     peaks_list_c1 = list()
     peaks_list_c2 = list()
-    for seqname, loc_comb_data in tqdm(
-        comb_data.groupby("seqname"), disable=~progress, desc="sequence"
-    ):
-        peaks_c1 = track_to_interval(loc_comb_data, "c1", step_size, seqname)
-        peaks_list_c1.append(peaks_c1)
-        peaks_c2 = track_to_interval(loc_comb_data, "c2", step_size, seqname)
-        peaks_list_c2.append(peaks_c1)
+    jobs = [
+        (loc_comb_data, step_size, seqname)
+        for seqname, loc_comb_data in comb_data.groupby("seqname")
+    ]
+    with threadpool_limits(limits=1):
+        with multiprocessing.Pool(cores) as pool:
+            for peaks_c1, peaks_c2 in tqdm(
+                pool.imap(both_tracks_to_intervlas, jobs),
+                total=len(jobs),
+                disable=~progress,
+                desc="sequence",
+            ):
+                peaks_list_c1.append(peaks_c1)
+                peaks_list_c2.append(peaks_c1)
     peaks_c1 = pd.concat(peaks_list_c1, axis=0)
     peaks_c1["length"] = peaks_c1["end"] - peaks_c1["start"]
     peaks_c2 = pd.concat(peaks_list_c2, axis=0)
@@ -610,7 +625,7 @@ def main():
         logger.info("Checking length distribution flip.")
         check_length_distribution_flip(workdata, map_results)
 
-    logger.info("Interpolating deconvolved tracks.")
+    logger.info("Processing deconvolved tracks.")
     comb_data, signal_c1_list_global, signal_c2_list_global = interpolate(
         workdata,
         map_results,
@@ -627,7 +642,7 @@ def main():
         fraction_c1_permissive,
         fraction_c2_permissive,
     ) = target_fractions(comb_data, args.fraction_in_peaks)
-    logger.info("Selecting peaks candidates.")
+    logger.info("Selecting peak candidates.")
     comb_data = mark_peaks(
         comb_data,
         signal_c1_list_global,
@@ -638,7 +653,7 @@ def main():
     )
     logger.info("Converting peak signal to intervals.")
     peaks_c1, peaks_c2 = tracks_to_intervals(
-        comb_data, args.span, progress=~args.no_progress
+        comb_data, args.span, cores, progress=~args.no_progress
     )
     peaks_c1 = peaks_c1[peaks_c1["length"] > args.c1_min_peak_size]
     peaks_c2 = peaks_c2[peaks_c2["length"] > args.c2_min_peak_size]
