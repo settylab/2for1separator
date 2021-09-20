@@ -253,14 +253,14 @@ def subdivide(
             if len(sel_cuts) > max_cuts_per_intervall:
                 perc = len(sel_cuts) / max_cuts_per_intervall
                 warnings.warn(
-                    f"Subdivide {len(starts)} has {perc:.2%} of the maximally cuts "
-                    "per interval. This may result in too large work chunks."
+                    f"Subdivide {len(starts)} has {perc:.2%} of the selected maximum "
+                    "of cuts per interval. This could result in too large work chunks."
                 )
             if n_locs > max_locations_per_intervall:
                 perc = n_locs / max_locations_per_intervall
                 warnings.warn(
-                    f"Subdivide {len(starts)} has {perc:.2%} of the maximally cut "
-                    "locations per interval. This may result in too large work chunks."
+                    f"Subdivide {len(starts)} has {perc:.2%} of the selected maximum "
+                    "of cuts per interval. This could result in too large work chunks."
                 )
 
             # start new intervall
