@@ -243,6 +243,14 @@ def get_cov_functions(c1_cov_string, c2_cov_string):
     p = re.compile(r"([a-zA-Z][a-zA-Z0-9]*\()")
     c1_code = p.sub(r"pm.gp.cov.\g<1>1, ", c1_cov_string)
     c2_code = p.sub(r"pm.gp.cov.\g<1>1, ", c2_cov_string)
+    covs_wo_input_dims = {
+        'WhiteNoise(': r'WhiteNoise\(1, ',
+        'Constant(': r'Constant\(1, ',
+        'Kron(': r'Kron\(1, ',
+    }
+    for repl, pattern in covs_wo_input_dims.items():
+        c1_code = re.sub(pattern, repl, c1_code)
+        c2_code = re.sub(pattern, repl, c2_code)
     try:
         c1_cov = eval(c1_code)
     except Exception:
