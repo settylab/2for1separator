@@ -103,10 +103,10 @@ def parse_args():
 def generate_entry(
     seqname,
     locations,
-    signal_PolS5P,
-    signal_K27,
-    bw_PolS5P,
-    bw_K27,
+    signal_c1,
+    signal_c2,
+    bw_c1,
+    bw_c2,
     span=10,
     unit=100,
     seq_size=np.inf,
@@ -116,21 +116,21 @@ def generate_entry(
     factor, rest = divmod(span_multiple, span)
     span_multiple -= rest
     grid = np.arange(np.min(locations), np.min(locations) + span_multiple)
-    interpolated_PolS5P = np.interp(grid, locations, signal_PolS5P)
-    interpolated_K27 = np.interp(grid, locations, signal_K27)
+    interpolated_c1 = np.interp(grid, locations, signal_c1)
+    interpolated_c2 = np.interp(grid, locations, signal_c2)
     if span != 1:
         grid = grid[::span]
-        interpolated_PolS5P = interpolated_PolS5P.reshape(factor, span).mean(axis=1)
-        interpolated_K27 = interpolated_K27.reshape(factor, span).mean(axis=1)
-    bw_PolS5P.addEntries(
+        interpolated_c1 = interpolated_c1.reshape(factor, span).mean(axis=1)
+        interpolated_c2 = interpolated_c2.reshape(factor, span).mean(axis=1)
+    bw_c1.addEntries(
         seqname,
         int(np.min(grid)),
         span=span,
         step=span,
-        values=interpolated_PolS5P * unit,
+        values=interpolated_c1 * unit,
     )
-    bw_K27.addEntries(
-        seqname, int(np.min(grid)), span=span, step=span, values=interpolated_K27 * unit
+    bw_c2.addEntries(
+        seqname, int(np.min(grid)), span=span, step=span, values=interpolated_c2 * unit
     )
 
 
@@ -157,17 +157,17 @@ def make_bigwigs(
             if seq in all_seqs:
                 chrom_sizes[seq] = int(size)
 
-    bw_PolS5P_file = out_base_filename + "_PolS5P.bw"
-    bw_PolS5P = pyBigWig.open(bw_PolS5P_file, "w")
-    bw_PolS5P.addHeader(list(sorted(chrom_sizes.items())))
+    bw_c1_file = out_base_filename + "_c1.bw"
+    bw_c1 = pyBigWig.open(bw_c1_file, "w")
+    bw_c1.addHeader(list(sorted(chrom_sizes.items())))
 
-    bw_K27_file = out_base_filename + "_K27.bw"
-    bw_K27 = pyBigWig.open(bw_K27_file, "w")
-    bw_K27.addHeader(list(sorted(chrom_sizes.items())))
+    bw_c2_file = out_base_filename + "_c2.bw"
+    bw_c2 = pyBigWig.open(bw_c2_file, "w")
+    bw_c2.addHeader(list(sorted(chrom_sizes.items())))
 
     results_per_chr = dict()
-    signal_PolS5P_list = list()
-    signal_K27_list = list()
+    signal_c1_list = list()
+    signal_c2_list = list()
     location_list = list()
     last_name = ""
 
@@ -195,60 +195,60 @@ def make_bigwigs(
 
         locations = dat["cuts"]["location"][start_idx:end_idx].values.astype(int)
         idx = dat["cuts"]["location"].rank(method="dense").astype(int) - 1
-        log_signal_PolS5P = maxlle[f"f_c1_{name}"][idx][start_idx:end_idx]
-        log_signal_K27 = maxlle[f"f_c2_{name}"][idx][start_idx:end_idx]
-        if np.max(log_signal_PolS5P) > max_log_value:
+        log_signal_c1 = maxlle[f"f_c1_{name}"][idx][start_idx:end_idx]
+        log_signal_c2 = maxlle[f"f_c2_{name}"][idx][start_idx:end_idx]
+        if np.max(log_signal_c1) > max_log_value:
             logger.warn(
-                f"The PolS5P track of intervall {name} in work chunk {wg} contains "
+                f"The c1 track of intervall {name} in work chunk {wg} contains "
                 "values that are too large. The interval will be skipped."
             )
             continue
-        if np.max(log_signal_K27) > max_log_value:
+        if np.max(log_signal_c2) > max_log_value:
             logger.warn(
-                f"The K27 track of intervall {name} in work chunk {wg} contains "
+                f"The c2 track of intervall {name} in work chunk {wg} contains "
                 "values that are too large. The interval will be skipped."
             )
             continue
-        signal_PolS5P = np.exp(log_signal_PolS5P)
-        signal_K27 = np.exp(log_signal_K27)
+        signal_c1 = np.exp(log_signal_c1)
+        signal_c2 = np.exp(log_signal_c2)
         base_name, _ = name.split(".")
         if location_list and last_name != base_name:
             generate_entry(
                 last_seq,
                 np.hstack(location_list),
-                np.hstack(signal_PolS5P_list),
-                np.hstack(signal_K27_list),
-                bw_PolS5P,
-                bw_K27,
+                np.hstack(signal_c1_list),
+                np.hstack(signal_c2_list),
+                bw_c1,
+                bw_c2,
                 span=span,
                 unit=unit,
                 seq_size=chrom_sizes[last_seq],
             )
             location_list = list()
-            signal_PolS5P_list = list()
-            signal_K27_list = list()
+            signal_c1_list = list()
+            signal_c2_list = list()
         if dat["is_subdivide"]:
             location_list.append(locations)
-            signal_PolS5P_list.append(signal_PolS5P)
-            signal_K27_list.append(signal_K27)
+            signal_c1_list.append(signal_c1)
+            signal_c2_list.append(signal_c2)
             last_seq = seq
             last_name = base_name
         else:
             generate_entry(
                 seq,
                 locations,
-                signal_PolS5P,
-                signal_K27,
-                bw_PolS5P,
-                bw_K27,
+                signal_c1,
+                signal_c2,
+                bw_c1,
+                bw_c2,
                 span=span,
                 unit=unit,
                 seq_size=chrom_sizes[seq],
             )
 
-    logger.info("Closing bigwig files %s and %s.", bw_PolS5P_file, bw_K27_file)
-    bw_PolS5P.close()
-    bw_K27.close()
+    logger.info("Closing bigwig files %s and %s.", bw_c1_file, bw_c2_file)
+    bw_c1.close()
+    bw_c2.close()
 
 
 def main():
