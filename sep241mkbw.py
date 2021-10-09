@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 import pyBigWig
 
 from dcbackend import logger, setup_logging
-from dcbackend import read_job_data, read_results
+from dcbackend import read_job_data, read_results, read_region_string
 from dcbackend import check_length_distribution_flip
 from dcbackend import MissingData
 
@@ -61,6 +61,12 @@ def parse_args():
         type=int,
         default=100,
         metavar="int",
+    )
+    parser.add_argument(
+        "--region",
+        help="Limit output to this genomic region.",
+        type=str,
+        metavar="chr:start-end",
     )
     parser.add_argument(
         "--span",
@@ -136,10 +142,15 @@ def make_bigwigs(
     span=10,
     unit=100,
     max_log_value=50,
+    region=None,
     progress=True,
 ):
+    if region:
+        sel_seq, sel_start, sel_end = read_region_string(region, short_seqname=False)
+        all_seqs = [sel_seq, ]
+    else:
+        all_seqs = workdata["seqname"].unique()
     chrom_sizes = dict()
-    all_seqs = workdata["seqname"].unique()
     with open(sizes_file, "r") as fl:
         for line in fl:
             seq, size = line.split()
@@ -172,6 +183,15 @@ def make_bigwigs(
         start_idx = dat["stich_start"][0]
         end_idx = dat["stich_end"][0]
         seq = dat["seqname"]
+
+        if region is not None:
+            # consider skipping this interval
+            if(
+                (seq != sel_seq)
+                or (dat["end"] < sel_start)
+                or (dat["start"] > sel_end)
+            ):
+                continue
 
         locations = dat["cuts"]["location"][start_idx:end_idx].values.astype(int)
         idx = dat["cuts"]["location"].rank(method="dense").astype(int) - 1
@@ -249,7 +269,7 @@ def main():
     if not args.no_check:
         logger.info("Checking length distribution flip.")
         check_length_distribution_flip(workdata, map_results)
-        
+
     if args.out is None:
         out_path, old_file = os.path.split(args.jobdata)
     else:
@@ -264,6 +284,7 @@ def main():
         span=args.span,
         unit=args.unit,
         max_log_value=50,
+        region=args.region,
         progress=~args.no_progress,
     )
     logger.info("Finished sucesfully.")

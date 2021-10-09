@@ -29,6 +29,9 @@ class NoData(Exception):
 class MissingData(Exception):
     pass
 
+class NotARegion(Exception):
+    pass
+
 logger = logging.getLogger("2for1seperator")
 
 
@@ -48,6 +51,18 @@ def setup_logging(level, logfile=None):
         fh.setFormatter(formatter)
         logger.addHandler(fh)
     logger.addHandler(ch)
+
+def read_region_string(feature, short_seqname=True, format_string=r"([^:]+):([0-9,_]+)-([0-9,_]+)"):
+    region_format = re.compile(format_string)
+    is_region = region_format.match(feature)
+    if not is_region:
+        raise NotARegion(f'The passed feature `{feature}` does not match region the forman seqname:start-end.')
+    seq, start, end = is_region.groups()
+    start = int(re.sub("[^0-9]", "", start))
+    end = int(re.sub("[^0-9]", "", end))
+    if short_seqname and seq.startswith("chr"):
+        seq = seq[3:]
+    return seq, start, end
 
 
 def length_dist(
@@ -141,7 +156,7 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
     diff_coors = diffs.corrwith(usual_diff)
     idx_flipped = diff_coors < threshold
     bad_wgs = set(idx_flipped.index[idx_flipped])
-    
+
     w_c1_posterior = w_c2_posterior = False
     for name, dat in workdata.iterrows():
         wg = dat["workchunk"]
@@ -155,7 +170,7 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
             w_c2_posterior = np.zeros(len(w_c2_inferred))
         w_c1_posterior += n_cuts * w_c1_inferred
         w_c2_posterior += n_cuts * w_c2_inferred
-        
+
     if any(idx_flipped):
         wg_string = ",".join([str(wg) for wg in bad_wgs])
         post_str_c1 = " ".join([str(int(w)) for w in w_c1_posterior])
@@ -163,12 +178,12 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
         logger.warn(
             """The length distributions for the following workgoups are flipped: %s
             Consider rerunning these workchunks with the following Dirichlet priors:
-                
+
                 --c1-dirichlet-prior %s
                 --c2-dirichlet-prior %s
-                
+
             To do that on slurm you can run
-            
+
                 jobs=%s
                 sbatch --mem=[max memory] --array=$jobs sep241deconvolve.py \\
                     --c1-dirichlet-prior %s \\
@@ -638,8 +653,6 @@ class Deconvoluter:
         self.gtf_file = gtf_file
         self.fragments_files = fragments_files
         self.max_smooth_igv_resolution = 1000
-        pattern = r"([^:]+):([0-9,_]+)-([0-9,_]+)"
-        self.region_format = re.compile(pattern)
         self._cache = dict()
         self.show_progress = show_progress
 
@@ -710,14 +723,10 @@ class Deconvoluter:
         self._gtf = gtf
 
     def _interpret_feature(self, feature):
-        is_region = self.region_format.match(feature)
-        if is_region:
-            seq, start, end = is_region.groups()
-            start = int(re.sub("[,_]", "", start))
-            end = int(re.sub("[,_]", "", end))
-            if seq.startswith("chr"):
-                seq = seq[3:]
-            return seq, start, end
+        try:
+            return read_region_string(feature)
+        except NotARegion:
+            pass
         gene_gtf = self.gtf.loc[self.gtf["feature"] == "gene", :]
         if feature in self.gene_names:
             idx = np.where(gene_gtf["gene_name"] == feature)
