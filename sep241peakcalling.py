@@ -59,7 +59,7 @@ def parse_args():
         "--c2-min-peak-size",
         help="Minimal number of bases per peak for component 2 (default=400).",
         type=int,
-        default=100,
+        default=400,
         metavar="int",
     )
     parser.add_argument(
@@ -377,8 +377,10 @@ def tracks_to_intervals(comb_data, step_size, cores=8, progress=True):
         (loc_comb_data, step_size, seqname)
         for seqname, loc_comb_data in comb_data.groupby("seqname")
     ]
+    lcores = min(cores, len(jobs))
+    logger.debug("Using %d cores for conversion.", lcores)
     with threadpool_limits(limits=1):
-        with multiprocessing.Pool(cores) as pool:
+        with multiprocessing.Pool(lcores) as pool:
             for peaks_c1, peaks_c2 in tqdm(
                 pool.imap(both_tracks_to_intervlas, jobs),
                 total=len(jobs),
@@ -386,7 +388,7 @@ def tracks_to_intervals(comb_data, step_size, cores=8, progress=True):
                 desc="sequence",
             ):
                 peaks_list_c1.append(peaks_c1)
-                peaks_list_c2.append(peaks_c1)
+                peaks_list_c2.append(peaks_c2)
     peaks_c1 = pd.concat(peaks_list_c1, axis=0)
     peaks_c1["length"] = peaks_c1["end"] - peaks_c1["start"]
     peaks_c2 = pd.concat(peaks_list_c2, axis=0)
@@ -554,7 +556,7 @@ def fiter_overlaps(peaks_c1, peaks_c2, overlap_df, threshold=0.5):
     peaks_c1 = peaks_c1.loc[peaks_c1.index.difference(bad_idx_c1), :].sort_values(
         ["seqname", "start"]
     )
-    peaks_c2 = peaks_c1.loc[peaks_c2.index.difference(bad_idx_c2), :].sort_values(
+    peaks_c2 = peaks_c2.loc[peaks_c2.index.difference(bad_idx_c2), :].sort_values(
         ["seqname", "start"]
     )
 
@@ -597,6 +599,7 @@ def bed_to_summit_bed(df):
 def main():
     args = parse_args()
     setup_logging(args.logLevel, args.logfile)
+    logger.debug("Loglevel is on DEBUG.")
     if not args.cores:
         cores = multiprocessing.cpu_count()
         logger.info("Detecting %s compute cores.", cores)
@@ -672,6 +675,8 @@ def main():
     peaks_c1, peaks_c2, overlaps = fiter_overlaps(
         peaks_c1, peaks_c2, overlap_df, threshold=args.fraction_overlap
     )
+    logger.info("Peaks for c1: %d", len(peaks_c1))
+    logger.info("Peaks for c2: %d", len(peaks_c2))
 
     if args.out is None:
         out_path, old_file = os.path.split(args.jobdata)
