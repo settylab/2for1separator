@@ -711,6 +711,10 @@ def main():
         out_path, old_file = os.path.split(args.jobdata)
     else:
         out_path = args.out
+        try:
+            os.mkdir(out_path)
+        except FileExistsError:
+            pass
 
     out_base = os.path.join(out_path, "peaks_")
     logger.info("Writing results to %s...", out_base)
