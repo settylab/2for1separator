@@ -199,13 +199,13 @@ def make_bigwigs(
         log_signal_c1 = maxlle[f"f_c1_{name}"][idx][start_idx:end_idx]
         log_signal_c2 = maxlle[f"f_c2_{name}"][idx][start_idx:end_idx]
         if np.max(log_signal_c1) > max_log_value:
-            logger.warn(
+            logger.warning(
                 f"The c1 track of intervall {name} in work chunk {wg} contains "
                 "values that are too large. The interval will be skipped."
             )
             continue
         if np.max(log_signal_c2) > max_log_value:
-            logger.warn(
+            logger.warning(
                 f"The c2 track of intervall {name} in work chunk {wg} contains "
                 "values that are too large. The interval will be skipped."
             )
