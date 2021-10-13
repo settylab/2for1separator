@@ -20,7 +20,6 @@ def parse_args():
         "jobdata",
         metavar="jobdata-file",
         type=str,
-        nargs="?",
         help="Jobdata with cuts per intervall and workchunk ids.",
     )
     parser.add_argument(
@@ -31,7 +30,6 @@ def parse_args():
         to fetch the file.
         """,
         type=str,
-        nargs="?",
     )
     parser.add_argument(
         "-l",
