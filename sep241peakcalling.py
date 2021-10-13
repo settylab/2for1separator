@@ -104,6 +104,11 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
+        "--only-check",
+        help="Stop after initial checking.",
+        action="store_true",
+    )
+    parser.add_argument(
         "--force",
         help="Call peaks even if some results are missing.",
         action="store_true",
@@ -648,6 +653,9 @@ def main():
     if not args.no_check:
         logger.info("Checking length distribution flip.")
         check_length_distribution_flip(workdata, map_results)
+    
+    if args.only_check:
+        return
 
     logger.info("Processing deconvolved tracks.")
     comb_data, signal_c1_list_global, signal_c2_list_global = interpolate(
