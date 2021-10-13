@@ -79,17 +79,17 @@ def parse_args():
     parser.add_argument(
         "--fraction-in-peaks",
         help="Fraction of reads that are expected to be in peaks (default=0.5).",
-        type=int,
+        type=float,
         default=0.5,
-        metavar="int",
+        metavar="float",
     )
     parser.add_argument(
         "--fraction-overlap",
         help="""If more than this fraction of a peak overlaps with a peak of the
         other target than it is considered an overlapping region (default=0.5).""",
-        type=int,
+        type=float,
         default=0.5,
-        metavar="int",
+        metavar="float",
     )
     parser.add_argument(
         "--span",
