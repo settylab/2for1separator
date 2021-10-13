@@ -139,7 +139,6 @@ def make_bigwigs(
     out_base_filename,
     span=10,
     unit=100,
-    max_log_value=50,
     region=None,
     progress=True,
 ):
@@ -168,6 +167,8 @@ def make_bigwigs(
     signal_c2_list = list()
     location_list = list()
     last_name = ""
+    
+    max_log_value = None
 
     for name, dat in tqdm(
         workdata.iterrows(), total=len(workdata), desc="intervals", disable=~progress
@@ -178,6 +179,8 @@ def make_bigwigs(
             continue
         if f"f_c1_{name}" not in maxlle.keys():
             continue
+        if max_log_value is None:
+            max_log_value = np.log(np.finfo(maxlle[f"f_c1_{name}"].dtype).max)
         start_idx = dat["stich_start"][0]
         end_idx = dat["stich_end"][0]
         seq = dat["seqname"]
@@ -281,7 +284,6 @@ def main():
         out_base,
         span=args.span,
         unit=args.unit,
-        max_log_value=50,
         region=args.region,
         progress=~args.no_progress,
     )

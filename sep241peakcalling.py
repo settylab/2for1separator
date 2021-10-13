@@ -165,6 +165,8 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
     signal_c2_list_global = list()
     location_list = list()
     last_name = ""
+    
+    max_log_value = None
 
     for name, dat in tqdm(workdata.iterrows(), total=len(workdata), desc="intervals"):
         wg = dat["workchunk"]
@@ -173,14 +175,33 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
             continue
         if f"f_c1_{name}" not in maxlle.keys():
             continue
+        if max_log_value is None:
+            max_log_value = np.log(np.finfo(maxlle[f"f_c1_{name}"].dtype).max)
         start_idx = dat["stich_start"][0]
         end_idx = dat["stich_end"][0]
         seq = dat["seqname"]
         locations = dat["cuts"]["location"][start_idx:end_idx].values.astype(int)
 
         idx = dat["cuts"]["location"].rank(method="dense").astype(int) - 1
-        signal_c1 = np.exp(maxlle[f"f_c1_{name}"][idx][start_idx:end_idx])
-        signal_c2 = np.exp(maxlle[f"f_c2_{name}"][idx][start_idx:end_idx])
+        
+        log_signal_c1 = maxlle[f"f_c1_{name}"][idx][start_idx:end_idx]
+        log_signal_c2 = maxlle[f"f_c2_{name}"][idx][start_idx:end_idx]
+        if np.max(log_signal_c1) > max_log_value:
+            logger.warning(
+                f"The c1 track of intervall {name} in work chunk {wg} contains "
+                "values that are too large. The interval will be skipped."
+            )
+            continue
+        if np.max(log_signal_c2) > max_log_value:
+            logger.warning(
+                f"The c2 track of intervall {name} in work chunk {wg} contains "
+                "values that are too large. The interval will be skipped."
+            )
+            continue
+        signal_c1 = np.exp(log_signal_c1)
+        signal_c2 = np.exp(log_signal_c2)
+        
+        
         signal_c1_list_global.append(signal_c1)
         signal_c2_list_global.append(signal_c2)
         base_name, _ = name.split(".")
