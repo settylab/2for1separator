@@ -18,19 +18,24 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 import sklearn.gaussian_process.kernels as kernels
 from sklearn.linear_model import LinearRegression
 from scipy.stats import lognorm
+import multiprocessing
 
 from KDEpy import FFTKDE
 
 from gtfparse import read_gtf
 
+
 class NoData(Exception):
     pass
+
 
 class MissingData(Exception):
     pass
 
+
 class NotARegion(Exception):
     pass
+
 
 logger = logging.getLogger("2for1seperator")
 
@@ -52,11 +57,23 @@ def setup_logging(level, logfile=None):
         logger.addHandler(fh)
     logger.addHandler(ch)
 
-def read_region_string(feature, short_seqname=True, format_string=r"([^:]+):([0-9,_]+)-([0-9,_]+)"):
+
+def detect_cores(cores=None):
+    if not cores:
+        cores = multiprocessing.cpu_count()
+        logger.info("Detecting %s compute cores.", cores)
+    return cores
+
+
+def read_region_string(
+    feature, short_seqname=True, format_string=r"([^:]+):([0-9,_]+)-([0-9,_]+)"
+):
     region_format = re.compile(format_string)
     is_region = region_format.match(feature)
     if not is_region:
-        raise NotARegion(f'The passed feature `{feature}` does not match region the forman seqname:start-end.')
+        raise NotARegion(
+            f"The passed feature `{feature}` does not match region the forman seqname:start-end."
+        )
     seq, start, end = is_region.groups()
     start = int(re.sub("[^0-9]", "", start))
     end = int(re.sub("[^0-9]", "", end))
@@ -190,8 +207,12 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
                     --c2-dirichlet-prior %s \\
                     [additional parameters]
                 """,
-            wg_string, post_str_c1, post_str_c2,
-            wg_string, post_str_c1, post_str_c2,
+            wg_string,
+            post_str_c1,
+            post_str_c2,
+            wg_string,
+            post_str_c1,
+            post_str_c2,
         )
     else:
         logger.info("No flipped length distributions found.")
@@ -199,6 +220,7 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
 
 def read_job_data(jobdata_file):
     return pd.read_pickle(jobdata_file)
+
 
 def read_results(jobdata_file, workdata, progress=True, error=True):
     map_results = dict()
@@ -220,7 +242,9 @@ def read_results(jobdata_file, workdata, progress=True, error=True):
         miss_str = ",".join(misses)
         logger.warn("Results of the following work chunks are missing: %s", miss_str)
         if error:
-            raise MissingData(f"Results of the following work chunks are missing: {miss_str}")
+            raise MissingData(
+                f"Results of the following work chunks are missing: {miss_str}"
+            )
     return map_results
 
 
