@@ -11,7 +11,7 @@ from threadpoolctl import threadpool_limits
 import multiprocessing
 
 from dcbackend import logger, setup_logging
-from dcbackend import read_job_data, read_results
+from dcbackend import read_job_data, read_results, detect_cores
 from dcbackend import check_length_distribution_flip
 from dcbackend import MissingData
 
@@ -46,7 +46,7 @@ def parse_args():
         "--out",
         help="Output directory (default is the path of the jobdata).",
         type=str,
-        metavar="dir",
+        metavar="out_dir",
     )
     parser.add_argument(
         "--c1-min-peak-size",
@@ -170,7 +170,7 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
     signal_c2_list_global = list()
     location_list = list()
     last_name = ""
-    
+
     max_log_value = None
 
     for name, dat in tqdm(workdata.iterrows(), total=len(workdata), desc="intervals"):
@@ -188,7 +188,7 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
         locations = dat["cuts"]["location"][start_idx:end_idx].values.astype(int)
 
         idx = dat["cuts"]["location"].rank(method="dense").astype(int) - 1
-        
+
         log_signal_c1 = maxlle[f"f_c1_{name}"][idx][start_idx:end_idx]
         log_signal_c2 = maxlle[f"f_c2_{name}"][idx][start_idx:end_idx]
         if np.max(log_signal_c1) > max_log_value:
@@ -205,8 +205,7 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
             continue
         signal_c1 = np.exp(log_signal_c1)
         signal_c2 = np.exp(log_signal_c2)
-        
-        
+
         signal_c1_list_global.append(signal_c1)
         signal_c2_list_global.append(signal_c2)
         base_name, _ = name.split(".")
@@ -258,13 +257,13 @@ def interpolate(
     results_list = list()
     if c1_sigma or c2_sigma:
         if not c1_sigma:
-            smooth_msg = 'c2'
+            smooth_msg = "c2"
         elif not c1_sigma:
-            smooth_msg = 'c1'
+            smooth_msg = "c1"
         else:
-            smooth_msg = 'c1 and c2'
+            smooth_msg = "c1 and c2"
     else:
-        smooth_msg = 'none'
+        smooth_msg = "none"
     logger.info("Interpolating + smoothening %s.", smooth_msg)
     with threadpool_limits(limits=1):
         with multiprocessing.Pool(cores) as pool:
@@ -329,7 +328,9 @@ def mark_peaks(
     bound_c1 = np.quantile(np.hstack(signal_c1_list_global), 1 - fraction_c1)
     if "c1 smooth" in comb_data.keys():
         logger.info("Averaging original and smoothed signal of c1.")
-        comb_data["c1 mean"] = np.mean(comb_data.loc[:, ["c1", "c1 smooth"]].values, axis=1)
+        comb_data["c1 mean"] = np.mean(
+            comb_data.loc[:, ["c1", "c1 smooth"]].values, axis=1
+        )
         comb_data["c1_peak"] = (comb_data["c1 mean"] > bound_c1) | (
             comb_data["c1 smooth"] > bound_c1
         )
@@ -344,7 +345,9 @@ def mark_peaks(
     bound_c2 = np.quantile(np.hstack(signal_c2_list_global), 1 - fraction_c2)
     if "c2 smooth" in comb_data.keys():
         logger.info("Averaging original and smoothed signal of c2.")
-        comb_data["c2 mean"] = np.mean(comb_data.loc[:, ["c2", "c2 smooth"]].values, axis=1)
+        comb_data["c2 mean"] = np.mean(
+            comb_data.loc[:, ["c2", "c2 smooth"]].values, axis=1
+        )
         comb_data["c2_peak"] = (comb_data["c2 mean"] > bound_c2) | (
             comb_data["c2 smooth"] > bound_c2
         )
@@ -388,6 +391,7 @@ def track_to_interval(loc_comb_data, comp_name, step_size, seqname):
         }
     ).sort_values("start")
     return peaks
+
 
 def both_tracks_to_intervlas(job):
     loc_comb_data, step_size, seqname = job
@@ -577,7 +581,9 @@ def fiter_overlaps(peaks_c1, peaks_c2, overlap_df, threshold=0.5):
     overlapping_c1 = peaks_c1.loc[bad_idx_c1, :]
     bad_idx_c2 = fractions_c2.index[fractions_c2 > threshold]
     overlapping_c2 = peaks_c2.loc[bad_idx_c2, :]
-    overlap_df = merge_overlapping_intervals(pd.concat([overlapping_c1, overlapping_c2]))
+    overlap_df = merge_overlapping_intervals(
+        pd.concat([overlapping_c1, overlapping_c2])
+    )
 
     peaks_c1 = peaks_c1.loc[peaks_c1.index.difference(bad_idx_c1), :].sort_values(
         ["seqname", "start"]
@@ -622,15 +628,86 @@ def bed_to_summit_bed(df):
     return summit_df
 
 
+def call_peaks(
+    comb_data,
+    signal_c1_list_global,
+    signal_c2_list_global,
+    work_coverage=1.0,
+    fraction_in_peaks=0.5,
+    fraction_overlap=0.5,
+    c1_min_peak_size=100,
+    c2_min_peak_size=400,
+    span=10,
+    cores=16,
+    progress=False,
+):
+    (
+        fraction_c1,
+        fraction_c2,
+        fraction_c1_permissive,
+        fraction_c2_permissive,
+    ) = target_fractions(comb_data, fraction_in_peaks)
+    logger.info("Selecting peak candidates.")
+    comb_data = mark_peaks(
+        comb_data,
+        signal_c1_list_global,
+        signal_c2_list_global,
+        fraction_c1,
+        fraction_c2,
+        work_coverage,
+    )
+    logger.info("Converting peak signal to intervals.")
+    peaks_c1, peaks_c2 = tracks_to_intervals(
+        comb_data, span, cores, progress=progress
+    )
+    peaks_c1 = peaks_c1[peaks_c1["length"] > c1_min_peak_size]
+    peaks_c2 = peaks_c2[peaks_c2["length"] > c2_min_peak_size]
+
+    logger.info("Analyzing overlaps.")
+    overlap_df = make_overlap_report(
+        comb_data,
+        peaks_c1,
+        peaks_c2,
+        fraction_c1_permissive,
+        fraction_c2_permissive,
+        progress=progress,
+    )
+
+    logger.info("Filtering overlaps.")
+    peaks_c1, peaks_c2, overlaps = fiter_overlaps(
+        peaks_c1, peaks_c2, overlap_df, threshold=fraction_overlap
+    )
+    logger.info("Peaks for c1: %d", len(peaks_c1))
+    logger.info("Peaks for c2: %d", len(peaks_c2))
+    return peaks_c1, peaks_c2, overlaps
+
+
+def write_peaks(bed_c1, bed_c2, overlaps, out_path):
+
+    out_base = os.path.join(out_path, "peaks_")
+
+    write_bed(
+        bed_c1[["seqname", "start", "end", "name", "auc"]], out_base + "deconv_c1.bed"
+    )
+    write_bed(
+        bed_c2[["seqname", "start", "end", "name", "auc"]], out_base + "deconv_c2.bed"
+    )
+
+    write_bed(bed_to_summit_bed(bed_c1), out_base + "deconv_c1.summits.bed")
+    write_bed(bed_to_summit_bed(bed_c2), out_base + "deconv_c2.summits.bed")
+
+    write_bed(
+        overlaps[["seqname", "start", "end", "name", "mean"]],
+        out_base + "overlap.bed",
+    )
+    return
+
+
 def main():
     args = parse_args()
     setup_logging(args.logLevel, args.logfile)
     logger.debug("Loglevel is on DEBUG.")
-    if not args.cores:
-        cores = multiprocessing.cpu_count()
-        logger.info("Detecting %s compute cores.", cores)
-    else:
-        cores = args.cores
+    cores = detect_cores(args.cores)
     logger.info("Limiting computation to %i cores.", cores)
     threadpool_limits(limits=int(cores))
     os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
@@ -651,9 +728,8 @@ def main():
         )
 
     if not args.no_check:
-        logger.info("Checking length distribution flip.")
         check_length_distribution_flip(workdata, map_results)
-    
+
     if args.only_check:
         return
 
@@ -668,44 +744,23 @@ def main():
         progress=~args.no_progress,
     )
 
-    (
-        fraction_c1,
-        fraction_c2,
-        fraction_c1_permissive,
-        fraction_c2_permissive,
-    ) = target_fractions(comb_data, args.fraction_in_peaks)
-    logger.info("Selecting peak candidates.")
-    comb_data = mark_peaks(
+    logger.info("Calling peaks.")
+    peaks_c1, peaks_c2, overlaps = call_peaks(
         comb_data,
         signal_c1_list_global,
         signal_c2_list_global,
-        fraction_c1,
-        fraction_c2,
-        work_coverage,
-    )
-    logger.info("Converting peak signal to intervals.")
-    peaks_c1, peaks_c2 = tracks_to_intervals(
-        comb_data, args.span, cores, progress=~args.no_progress
-    )
-    peaks_c1 = peaks_c1[peaks_c1["length"] > args.c1_min_peak_size]
-    peaks_c2 = peaks_c2[peaks_c2["length"] > args.c2_min_peak_size]
-
-    logger.info("Analyzing overlaps.")
-    overlap_df = make_overlap_report(
-        comb_data,
-        peaks_c1,
-        peaks_c2,
-        fraction_c1_permissive,
-        fraction_c2_permissive,
+        work_coverage=work_coverage,
+        fraction_in_peaks=args.fraction_in_peaks,
+        fraction_overlap=args.fraction_overlap,
+        c1_min_peak_size=args.c1_min_peak_size,
+        c2_min_peak_size=args.c2_min_peak_size,
+        span=args.span,
+        cores=cores,
         progress=~args.no_progress,
     )
 
-    logger.info("Filtering overlaps.")
-    peaks_c1, peaks_c2, overlaps = fiter_overlaps(
-        peaks_c1, peaks_c2, overlap_df, threshold=args.fraction_overlap
-    )
-    logger.info("Peaks for c1: %d", len(peaks_c1))
-    logger.info("Peaks for c2: %d", len(peaks_c2))
+    bed_c1 = inlude_auc(name_peaks(peaks_c1))
+    bed_c2 = inlude_auc(name_peaks(peaks_c2))
 
     if args.out is None:
         out_path, old_file = os.path.split(args.jobdata)
@@ -716,27 +771,8 @@ def main():
         except FileExistsError:
             pass
 
-    out_base = os.path.join(out_path, "peaks_")
-    logger.info("Writing results to %s...", out_base)
-
-    bed_c1 = inlude_auc(name_peaks(peaks_c1))
-    bed_c2 = inlude_auc(name_peaks(peaks_c2))
-
-    write_bed(
-        bed_c1[["seqname", "start", "end", "name", "auc"]], out_base + "deconv_c1.bed"
-    )
-    write_bed(
-        bed_c2[["seqname", "start", "end", "name", "auc"]], out_base + "deconv_c2.bed"
-    )
-
-    write_bed(bed_to_summit_bed(bed_c1), out_base + "deconv_c1.summits.bed")
-    write_bed(bed_to_summit_bed(bed_c2), out_base + "deconv_c2.summits.bed")
-
-    write_bed(
-        overlaps[["seqname", "start", "end", "name", "mean"]],
-        out_base + "overlap.bed",
-    )
-
+    logger.info("Writing results to %s...", out_path)
+    write_peaks(bed_c1, bed_c2, overlaps, out_path)
     logger.info("Finished sucesfully.")
 
 
