@@ -28,7 +28,9 @@ class SubdivisionError(Exception):
     pass
 
 
-def filter_sort_events(events, blacklist=None, blacklisted_sequences=set(), progress=True):
+def filter_sort_events(
+    events, blacklist=None, blacklisted_sequences=set(), progress=True
+):
     grouped = events.groupby("seqname")
     if blacklist:
         tb = tabix.open(blacklist)
@@ -107,8 +109,11 @@ def full_kde_grid(x, xmin=None, xmax=None):
     return grid
 
 
-def get_kde(cut_locations, kde_bw=500, kernel="gaussian", xmin=None, xmax=None):
-    grid = full_kde_grid(cut_locations, xmin, xmax)
+def get_kde(
+    cut_locations, kde_bw=500, kernel="gaussian", xmin=None, xmax=None, grid=None
+):
+    if grid is None:
+        grid = full_kde_grid(cut_locations, xmin, xmax)
     kernel = FFTKDE(kernel=kernel, bw=kde_bw)
     kernel = kernel.fit(cut_locations)
     density = kernel.evaluate(grid)
@@ -659,7 +664,7 @@ def make_work_packages(
                 if nlc > largest_size:
                     largest_size = nlc
                     largest_idx = j
-            subdivided_ints[i]['largest'] = largest_idx
+            subdivided_ints[i]["largest"] = largest_idx
             if largest_size > richest_sub_int["size"]:
                 richest_sub_int = {
                     "size": largest_size,
@@ -687,7 +692,7 @@ def main():
     setup_logging(args.logLevel, args.logfile)
     out_path, _ = os.path.split(args.out)
     if not os.path.isdir(out_path):
-        logger.info('Making directory %s', out_path)
+        logger.info("Making directory %s", out_path)
         os.mkdir(out_path)
     if not args.cores:
         cores = multiprocessing.cpu_count()
