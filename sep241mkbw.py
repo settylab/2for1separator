@@ -31,6 +31,7 @@ def parse_args():
         https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/fetchChromSizes
         to fetch the file.
         """,
+        metavar="chrom-sizes-file",
         type=str,
     )
     parser.add_argument(
