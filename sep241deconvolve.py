@@ -37,6 +37,45 @@ def setup_logging(level, logfile=None):
         fh.setFormatter(formatter)
         logger.addHandler(fh)
     logger.addHandler(ch)
+    
+def setFlag(flag, value=None):
+    """
+    Description
+    -----------
+    Sets or overites the theano `flag` in the envirnment variable 'THEANO_FLAGS'.
+
+    Parameter
+    ---------
+    flag : The flag name that is to be overwritten or set.
+    value : The value to be asigned to the flag. If it is
+    `None` then `flag` will be pasted as is into 'THEANO_FLAGS'.
+
+    Value
+    -----
+    The new value of 'THEANO_FLAGS'.
+    """
+    if not isinstance(flag, str):
+        raise TypeError("The arrgument `flag` needs to be a string.")
+    if "THEANO_FLAGS" in os.environ:
+        flagString = os.getenv("THEANO_FLAGS")
+    else:
+        flagString = ""
+
+    if value is None:
+        newFlagString = flagString + "," + flag
+        os.environ["THEANO_FLAGS"] = newFlagString
+        return newFlagString
+
+    if not isinstance(value, str):
+        raise TypeError("The arrgument `value` needs to be a string or `None`.")
+
+    oldFlags = flagString.split(",")
+    flagTag = flag + "="
+    newFlags = [s for s in oldFlags if flagTag not in s]
+    newFlags.append(flagTag + value)
+    newFlagString = ",".join(newFlags)
+    os.environ["THEANO_FLAGS"] = newFlagString
+    return newFlagString
 
 
 if __name__ == "__main__":
@@ -167,56 +206,14 @@ if __name__ == "__main__":
     logger.info(args)
     logging.getLogger("filelock").setLevel(logging.ERROR)  # theano/asrea prints a lot
 
-
-def setFlag(flag, value=None):
-    """
-    Description
-    -----------
-    Sets or overites the theano `flag` in the envirnment variable 'THEANO_FLAGS'.
-
-    Parameter
-    ---------
-    flag : The flag name that is to be overwritten or set.
-    value : The value to be asigned to the flag. If it is
-    `None` then `flag` will be pasted as is into 'THEANO_FLAGS'.
-
-    Value
-    -----
-    The new value of 'THEANO_FLAGS'.
-    """
-    if not isinstance(flag, str):
-        raise TypeError("The arrgument `flag` needs to be a string.")
-    if "THEANO_FLAGS" in os.environ:
-        flagString = os.getenv("THEANO_FLAGS")
+    tmpdir = os.getenv("TMPDIR")
+    if args.compiledir is not None:
+        compileDir = args.compiledir
+    elif tmpdir is None:
+        compileDir = "./sep241tmp"
     else:
-        flagString = ""
-
-    if value is None:
-        newFlagString = flagString + "," + flag
-        os.environ["THEANO_FLAGS"] = newFlagString
-        return newFlagString
-
-    if not isinstance(value, str):
-        raise TypeError("The arrgument `value` needs to be a string or `None`.")
-
-    oldFlags = flagString.split(",")
-    flagTag = flag + "="
-    newFlags = [s for s in oldFlags if flagTag not in s]
-    newFlags.append(flagTag + value)
-    newFlagString = ",".join(newFlags)
-    os.environ["THEANO_FLAGS"] = newFlagString
-    return newFlagString
-
-
-tmpdir = os.getenv("TMPDIR")
-if args.compiledir is not None:
-    compileDir = args.compiledir
-elif tmpdir is None:
-    compileDir = "./sep241tmp"
-else:
-    compileDir = os.path.join(tmpdir, "sep241tmp")
-setFlag("base_compiledir", compileDir)
-# setFlag("blas.ldflags", "'-L/usr/lib/ -lblas'")
+        compileDir = os.path.join(tmpdir, "sep241tmp")
+    setFlag("base_compiledir", compileDir)
 
 import theano
 
