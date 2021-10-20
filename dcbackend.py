@@ -33,6 +33,10 @@ class MissingData(Exception):
     pass
 
 
+class BEDFormatError(Exception):
+    pass
+
+
 class NotARegion(Exception):
     pass
 
@@ -56,6 +60,10 @@ def setup_logging(level, logfile=None):
         fh.setFormatter(formatter)
         logger.addHandler(fh)
     logger.addHandler(ch)
+
+
+def write_bed(bed_df, out_path):
+    bed_df.to_csv(out_path, sep="\t", header=False, index=False)
 
 
 def detect_cores(cores=None):
@@ -152,6 +160,23 @@ def posterior_length_dists(
     return result_df
 
 
+def posterior_mode_weights(workdata, map_results):
+    w_c1_posterior = w_c2_posterior = False
+    for name, dat in workdata.iterrows():
+        wg = dat["workchunk"]
+        if wg not in map_results:
+            continue
+        n_cuts = len(dat["cuts"])
+        w_c1_inferred = map_results[wg]["weight_c1"]
+        w_c2_inferred = map_results[wg]["weight_c2"]
+        if w_c1_posterior is False:
+            w_c1_posterior = np.zeros(len(w_c1_inferred))
+            w_c2_posterior = np.zeros(len(w_c2_inferred))
+        w_c1_posterior += n_cuts * w_c1_inferred
+        w_c2_posterior += n_cuts * w_c2_inferred
+    return w_c1_posterior, w_c2_posterior
+
+
 def check_length_distribution_flip(workdata, map_results, threshold=0.9):
     """Look for flip between posterior length distributions.
 
@@ -174,21 +199,8 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
     idx_flipped = diff_coors < threshold
     bad_wgs = set(idx_flipped.index[idx_flipped])
 
-    w_c1_posterior = w_c2_posterior = False
-    for name, dat in workdata.iterrows():
-        wg = dat["workchunk"]
-        if wg in bad_wgs or wg not in map_results:
-            continue
-        n_cuts = len(dat["cuts"])
-        w_c1_inferred = map_results[wg]["weight_c1"]
-        w_c2_inferred = map_results[wg]["weight_c2"]
-        if w_c1_posterior is False:
-            w_c1_posterior = np.zeros(len(w_c1_inferred))
-            w_c2_posterior = np.zeros(len(w_c2_inferred))
-        w_c1_posterior += n_cuts * w_c1_inferred
-        w_c2_posterior += n_cuts * w_c2_inferred
-
     if any(idx_flipped):
+        w_c1_posterior, w_c2_posterior = posterior_mode_weights(workdata, map_results)
         wg_string = ",".join([str(wg) for wg in bad_wgs])
         post_str_c1 = " ".join([str(int(w)) for w in w_c1_posterior])
         post_str_c2 = " ".join([str(int(w)) for w in w_c2_posterior])
@@ -1036,11 +1048,23 @@ class Deconvoluter:
                 )
             else:
                 lines = tqdm(buff, desc="reads", disable=~self.show_progress)
-            for line in lines:
-                seq, s, e = line.decode().split("\t")[:3]
-                start = int(s)
-                end = int(e)
-                reads.append((rep, seq, start, end))
+            n_fileds = None
+            for i, line in enumerate(lines):
+                if n_fileds is None:
+                    n_fileds = min(4, len(line.decode().split("\t")))
+                    logger.debug("Using %d columns of %s.", n_fileds, file)
+                if n_fileds == 3:
+                    seq, s, e = line.decode().split("\t")[:3]
+                    start = int(s)
+                    end = int(e)
+                    reads.append((rep, seq, start, end, f"read-{i}"))
+                elif n_fileds == 4:
+                    seq, s, e, bc = line.decode().split("\t")[:4]
+                    start = int(s)
+                    end = int(e)
+                    reads.append((rep, seq, start, end, bc))
+                else:
+                    raise BEDFormatError(f"Less than 3 columns in bed file {file}.")
         self._cache[h] = reads
         return reads
 
@@ -1051,7 +1075,9 @@ class Deconvoluter:
             logger.info(f"Reading sample {rep}")
             reads += self._all_of_file(file, rep)
         logger.info("Making data frame.")
-        result_df = pd.DataFrame(reads, columns=["from", "seqname", "start", "end"])
+        result_df = pd.DataFrame(
+            reads, columns=["from", "seqname", "start", "end", "barcode"]
+        )
         logger.info("Calculating read lengths.")
         result_df["length"] = result_df["end"] - result_df["start"]
         return result_df
