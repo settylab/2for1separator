@@ -11,7 +11,7 @@ from threadpoolctl import threadpool_limits
 import multiprocessing
 
 from dcbackend import logger, setup_logging
-from dcbackend import read_job_data, read_results, detect_cores
+from dcbackend import read_job_data, read_results, write_bed, detect_cores
 from dcbackend import check_length_distribution_flip
 from dcbackend import MissingData
 
@@ -109,6 +109,11 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
+        "--uncorrected",
+        help="Do not correct cut ratio estimate with Bayesian prior.",
+        action="store_true",
+    )
+    parser.add_argument(
         "--force",
         help="Call peaks even if some results are missing.",
         action="store_true",
@@ -177,8 +182,10 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
         wg = dat["workchunk"]
         maxlle = map_results.get(dat["workchunk"], None)
         if maxlle is None:
+            logger.warning("Data of workchunk %d is None.", wg)
             continue
         if f"f_c1_{name}" not in maxlle.keys():
+            logger.warning("Marginal likelihood results not found in workchunk %d.", wg)
             continue
         if max_log_value is None:
             max_log_value = np.log(np.finfo(maxlle[f"f_c1_{name}"].dtype).max)
@@ -279,7 +286,7 @@ def interpolate(
     return comb_data, signal_c1_list_global, signal_c2_list_global
 
 
-def target_fractions(comb_data, fraction_in_peaks):
+def target_fractions(comb_data, fraction_in_peaks, uncorrected=False):
     total_c1 = comb_data["c1"].sum()
     total_c2 = comb_data["c2"].sum()
     total = total_c1 + total_c2
@@ -304,6 +311,14 @@ def target_fractions(comb_data, fraction_in_peaks):
     logger.info(
         f"Estimating a total of {fraction_c1:.1%} c1 and {fraction_c2:.1%} c2 cuts in peaks."
     )
+
+    if uncorrected:
+        return (
+            fraction_c1,
+            fraction_c2,
+            fraction_c1_uncorrected,
+            fraction_c2_uncorrected,
+        )
     return fraction_c1, fraction_c2, fraction_c1_permissive, fraction_c2_permissive
 
 
@@ -610,10 +625,6 @@ def inlude_auc(df):
     return df
 
 
-def write_bed(bed_df, out_path):
-    bed_df.to_csv(out_path, sep="\t", header=False, index=False)
-
-
 def bed_to_summit_bed(df):
     summits = df["summit"].astype(int)
     summit_df = pd.DataFrame(
@@ -635,6 +646,7 @@ def call_peaks(
     work_coverage=1.0,
     fraction_in_peaks=0.5,
     fraction_overlap=0.5,
+    uncorrected=False,
     c1_min_peak_size=100,
     c2_min_peak_size=400,
     span=10,
@@ -646,7 +658,7 @@ def call_peaks(
         fraction_c2,
         fraction_c1_permissive,
         fraction_c2_permissive,
-    ) = target_fractions(comb_data, fraction_in_peaks)
+    ) = target_fractions(comb_data, fraction_in_peaks, uncorrected=uncorrected)
     logger.info("Selecting peak candidates.")
     comb_data = mark_peaks(
         comb_data,
@@ -657,9 +669,7 @@ def call_peaks(
         work_coverage,
     )
     logger.info("Converting peak signal to intervals.")
-    peaks_c1, peaks_c2 = tracks_to_intervals(
-        comb_data, span, cores, progress=progress
-    )
+    peaks_c1, peaks_c2 = tracks_to_intervals(comb_data, span, cores, progress=progress)
     peaks_c1 = peaks_c1[peaks_c1["length"] > c1_min_peak_size]
     peaks_c2 = peaks_c2[peaks_c2["length"] > c2_min_peak_size]
 
@@ -752,6 +762,7 @@ def main():
         work_coverage=work_coverage,
         fraction_in_peaks=args.fraction_in_peaks,
         fraction_overlap=args.fraction_overlap,
+        uncorrected=args.uncorrected,
         c1_min_peak_size=args.c1_min_peak_size,
         c2_min_peak_size=args.c2_min_peak_size,
         span=args.span,
