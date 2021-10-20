@@ -244,9 +244,9 @@ def get_cov_functions(c1_cov_string, c2_cov_string):
     c1_code = p.sub(r"pm.gp.cov.\g<1>1, ", c1_cov_string)
     c2_code = p.sub(r"pm.gp.cov.\g<1>1, ", c2_cov_string)
     covs_wo_input_dims = {
-        'WhiteNoise(': r'WhiteNoise\(1, ',
-        'Constant(': r'Constant\(1, ',
-        'Kron(': r'Kron\(1, ',
+        "WhiteNoise(": r"WhiteNoise\(1, ",
+        "Constant(": r"Constant\(1, ",
+        "Kron(": r"Kron\(1, ",
     }
     for repl, pattern in covs_wo_input_dims.items():
         c1_code = re.sub(pattern, repl, c1_code)
@@ -276,6 +276,7 @@ def get_length_dist_modes(modes=[70, 200, 400, 600], sigmas=[0.29, 0.18, 0.15, 0
             mode = pm.Lognormal.dist(mus[i], sigma=sigmas[i], testval=modes[i])
             length_comps.append(mode)
         return length_comps
+
     return generator
 
 
@@ -301,7 +302,12 @@ def format_cuts(locations_ds):
 
 
 def make_model(
-    events, cov_functions, dirichlet_priors, length_comps_gen, mlevel=0, constraint=False
+    events,
+    cov_functions,
+    dirichlet_priors,
+    length_comps_gen,
+    mlevel=0,
+    constraint=False,
 ):
     logger.info("Compiling model.")
     with pm.Model() as model:
@@ -339,7 +345,7 @@ def make_model(
             length_diff = means.dot(larger_weights) - means.dot(smaller_weights)
             const = pm.Potential(
                 "length_mode_constraint",
-                pm.math.switch(length_diff > 0, 0, -length_diff * 1e5),
+                pm.math.switch(length_diff > 0, 0, -length_diff * 1e99),
             )
 
         for name, dat in events.iterrows():
