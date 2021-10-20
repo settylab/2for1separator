@@ -455,7 +455,7 @@ def parse_args():
     )
     parser.add_argument(
         "--seed",
-        help="Random state seed to assign intervals to work chunks.",
+        help="Random state seed to assign intervals to work chunks (default=242567).",
         type=int,
         default=242567,
         metavar="int",
