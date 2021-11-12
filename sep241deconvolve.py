@@ -22,6 +22,7 @@ logger = logging.getLogger("2for1seperator")
 
 
 def setup_logging(level, logfile=None):
+    logging.getLogger("filelock").setLevel(logging.ERROR)
     logger.propagate = False
     logging.basicConfig(
         format="[%(asctime)s] [%(levelname)-8s] %(message)s",
@@ -204,7 +205,6 @@ if __name__ == "__main__":
     setup_logging(args.logLevel, args.logfile)
     logger.info("Running whole_genome_deconvolve_job with arguments:")
     logger.info(args)
-    logging.getLogger("filelock").setLevel(logging.ERROR)  # theano/asrea prints a lot
 
     tmpdir = os.getenv("TMPDIR")
     if args.compiledir is not None:
