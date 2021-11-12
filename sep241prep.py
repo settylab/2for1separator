@@ -702,7 +702,7 @@ def main():
     logger.info("Limiting computation to %i cores.", cores)
     threadpool_limits(limits=int(cores))
     os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
-    fragments_files = {f"file {i}": file for i, file in enumerate(args.fragment_files)}
+    fragments_files = {f"file_{i}": file for i, file in enumerate(args.fragment_files)}
     dc = Deconvoluter(fragments_files=fragments_files, show_progress=~args.no_progress)
     len_df = dc.all_fragments()
     all_events = dc.envents_from_intervals(len_df)
