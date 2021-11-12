@@ -298,6 +298,9 @@ def target_fractions(comb_data, fraction_in_peaks, uncorrected=False):
     logger.info(
         f"Integral ratio: {fraction_c1_uncorrected:.1%} c1 and {fraction_c2_uncorrected:.1%} c2 cuts."
     )
+    if uncorrected:
+        fraction_c1 = fraction_in_peaks * total_c1 / total
+        fraction_c2 = fraction_in_peaks * total_c2 / total
 
     equal_dist_cuts = total
     total_c1 = comb_data["c1"].sum() + (equal_dist_cuts / 2)
@@ -309,19 +312,22 @@ def target_fractions(comb_data, fraction_in_peaks, uncorrected=False):
         f"Bayesian estimation: {fraction_c1_permissive:.1%} c1 and {fraction_c2_permissive:.1%} c2 cuts."
     )
 
-    fraction_c1 = fraction_in_peaks * total_c1 / total
-    fraction_c2 = fraction_in_peaks * total_c2 / total
-    logger.info(
-        f"Estimating a total of {fraction_c1:.1%} c1 and {fraction_c2:.1%} c2 cuts in peaks."
-    )
-
     if uncorrected:
+        logger.info(
+            f"Estimating an uncorrected total of {fraction_c1:.1%} c1 and {fraction_c2:.1%} c2 cuts in peaks."
+        )
         return (
             fraction_c1,
             fraction_c2,
             fraction_c1_uncorrected,
             fraction_c2_uncorrected,
         )
+
+    fraction_c1 = fraction_in_peaks * total_c1 / total
+    fraction_c2 = fraction_in_peaks * total_c2 / total
+    logger.info(
+        f"Estimating a total of {fraction_c1:.1%} c1 and {fraction_c2:.1%} c2 cuts in peaks."
+    )
     return fraction_c1, fraction_c2, fraction_c1_permissive, fraction_c2_permissive
 
 
@@ -732,7 +738,7 @@ def main():
     logger.info("Reading deconvolution results.")
     try:
         map_results = read_results(
-            args.jobdata, workdata, progress=~args.no_progress, error=~args.force
+            args.jobdata, workdata, progress=~args.no_progress, error=not args.force
         )
     except MissingData:
         raise MissingData(
