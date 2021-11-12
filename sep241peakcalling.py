@@ -177,12 +177,15 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
     last_name = ""
 
     max_log_value = None
+    missing_data_wg = set()
 
     for name, dat in tqdm(workdata.iterrows(), total=len(workdata), desc="intervals"):
         wg = dat["workchunk"]
         maxlle = map_results.get(dat["workchunk"], None)
         if maxlle is None:
-            logger.warning("Data of workchunk %d is None.", wg)
+            if wg not in missing_data_wg:
+                logger.warning("Data of workchunk %d is None.", wg)
+                missing_data_wg.add(wg)
             continue
         if f"f_c1_{name}" not in maxlle.keys():
             logger.warning("Marginal likelihood results not found in workchunk %d.", wg)
