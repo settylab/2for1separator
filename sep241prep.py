@@ -194,7 +194,7 @@ def subdivide(
     region_size = end - start
     if region_size <= 2 * region_padding:
         raise RegionTooSmall(
-            "Region cannot be subdevided, smaller than three paddings."
+            "Region cannot be subdivided, smaller than three paddings."
             f"{region_size: = } {3*region_padding: = }"
         )
     if start > np.min(lcuts):
@@ -600,7 +600,7 @@ def make_work_packages(
     cuts_per_seq = {seq: df for seq, df in cut_df.groupby("seqname")}
     for i, (seqname, data) in enumerate(intervalls.items()):
         logger.info(
-            f"Subdeviding intervals in sequence {seqname} [{i+1}/{len(intervalls)}]."
+            f"Subdividing intervals in sequence {seqname} [{i+1}/{len(intervalls)}]."
         )
         starts, ends = data["start"], data["end"]
         all_cuts = cuts_per_seq.get(seqname)
