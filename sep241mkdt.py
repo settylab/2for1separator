@@ -7,7 +7,7 @@ import scipy
 
 from threadpoolctl import threadpool_limits
 from tqdm.auto import tqdm
-from dcbackend import logger, setup_logging, detect_cores
+from sep241util import logger, setup_logging, detect_cores
 import sep241prep as spr
 import sep241peakcalling as sep241peakcalling
 

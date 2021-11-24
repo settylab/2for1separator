@@ -12,8 +12,8 @@ from tqdm.auto import tqdm
 from KDEpy import FFTKDE
 import multiprocessing
 
-from dcbackend import Deconvoluter, LevelSet
-from dcbackend import logger, setup_logging
+from sep241util import Deconvoluter, LevelSet
+from sep241util import logger, setup_logging
 
 
 class RegionTooSmall(Exception):
