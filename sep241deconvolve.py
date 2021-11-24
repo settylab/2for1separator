@@ -38,7 +38,8 @@ def setup_logging(level, logfile=None):
         fh.setFormatter(formatter)
         logger.addHandler(fh)
     logger.addHandler(ch)
-    
+
+
 def setFlag(flag, value=None):
     """
     Description

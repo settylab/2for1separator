@@ -82,9 +82,7 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--no-progress",
-        help="Do not show progress.",
-        action="store_true",
+        "--no-progress", help="Do not show progress.", action="store_true",
     )
     parser.add_argument(
         "--force",
@@ -117,11 +115,7 @@ def generate_entry(
         interpolated_c1 = interpolated_c1.reshape(factor, span).mean(axis=1)
         interpolated_c2 = interpolated_c2.reshape(factor, span).mean(axis=1)
     bw_c1.addEntries(
-        seqname,
-        int(np.min(grid)),
-        span=span,
-        step=span,
-        values=interpolated_c1 * unit,
+        seqname, int(np.min(grid)), span=span, step=span, values=interpolated_c1 * unit,
     )
     bw_c2.addEntries(
         seqname, int(np.min(grid)), span=span, step=span, values=interpolated_c2 * unit

@@ -28,10 +28,7 @@ def parse_args():
         help="Bed file with single antibody reads of component 2.",
     )
     parser.add_argument(
-        "out",
-        help="Output directory.",
-        type=str,
-        metavar="out_dir",
+        "out", help="Output directory.", type=str, metavar="out_dir",
     )
     parser.add_argument(
         "-l",
@@ -119,16 +116,10 @@ def parse_args():
         metavar="int",
     )
     parser.add_argument(
-        "--no-progress",
-        help="Do not show progress.",
-        action="store_true",
+        "--no-progress", help="Do not show progress.", action="store_true",
     )
     parser.add_argument(
-        "--cores",
-        help="Number of CPUs to use.",
-        type=int,
-        default=0,
-        metavar="int",
+        "--cores", help="Number of CPUs to use.", type=int, default=0, metavar="int",
     )
     return parser.parse_args()
 

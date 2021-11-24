@@ -136,23 +136,13 @@ def posterior_length_dists(
         w_c1 = args.c1_dirichlet_prior
         y = length_dist(w_c1 / np.sum(w_c1))
         prior_df = pd.DataFrame(
-            {
-                "density": y,
-                "length": x,
-                "from": "Prior c1",
-                "workchunk": "none",
-            }
+            {"density": y, "length": x, "from": "Prior c1", "workchunk": "none",}
         )
         df_list.append(prior_df)
         w_c2 = args.c2_dirichlet_prior
         y = length_dist(w_c2 / np.sum(w_c2))
         prior_df = pd.DataFrame(
-            {
-                "density": y,
-                "length": x,
-                "from": "Prior c2",
-                "workchunk": "none",
-            }
+            {"density": y, "length": x, "from": "Prior c2", "workchunk": "none",}
         )
         df_list.append(prior_df)
     result_df = pd.concat(df_list)
@@ -430,18 +420,13 @@ def igv_plot(
     ):
         # use familiar coloring
         (breaks, values) = zip(*known_celltypes.items())
-        pl = pl + p9.scale_fill_manual(
-            breaks=breaks,
-            values=values,
-        )
+        pl = pl + p9.scale_fill_manual(breaks=breaks, values=values,)
     else:
         pl = pl + p9.scale_fill_hue()
 
     if group is not None:
         pl += p9.facet_grid(
-            f"{group} ~ .",
-            scales=facet_scales,
-            labeller=p9.labeller(relabeling),
+            f"{group} ~ .", scales=facet_scales, labeller=p9.labeller(relabeling),
         )
     if is_density:
         pl += p9.labs(y="cuts/hbp")
@@ -681,10 +666,7 @@ class Deconvoluter:
     """
 
     def __init__(
-        self,
-        fragments_files=dict(),
-        gtf_file=None,
-        show_progress=True,
+        self, fragments_files=dict(), gtf_file=None, show_progress=True,
     ):
         self.gtf_file = gtf_file
         self.fragments_files = fragments_files
@@ -713,12 +695,7 @@ class Deconvoluter:
         if points:
             ad = self.rna_ad
             idx = ad.obs["selected"]
-            df = pd.DataFrame(
-                {
-                    x: ad.obs[x][idx],
-                },
-                index=ad.obs_names[idx],
-            )
+            df = pd.DataFrame({x: ad.obs[x][idx],}, index=ad.obs_names[idx],)
             for gene in genes:
                 df[gene] = ad.layers["MAGIC_imputed_data"][idx, ad.var_names == gene]
             pdf = df.melt(id_vars=[x], var_name="gene", value_name="expression")
@@ -849,10 +826,7 @@ class Deconvoluter:
         """
         if isinstance(feature, str):
             intervals, events, lower_bound, upper_bound = self.get_fragments(
-                feature,
-                max_dist=max_dist,
-                nuc_size=nuc_size,
-                _return_bounds=True,
+                feature, max_dist=max_dist, nuc_size=nuc_size, _return_bounds=True,
             )
         else:
             events = feature

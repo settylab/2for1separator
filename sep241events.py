@@ -58,9 +58,7 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--no-progress",
-        help="Do not show progress.",
-        action="store_true",
+        "--no-progress", help="Do not show progress.", action="store_true",
     )
     parser.add_argument(
         "--force",
@@ -77,7 +75,9 @@ def likelihoods_per_cut(workdata, map_results, progress=True):
     max_log_value = None
     missing_data_wg = set()
 
-    for name, dat in tqdm(workdata.iterrows(), total=len(workdata), desc="intervals", disable=~progress):
+    for name, dat in tqdm(
+        workdata.iterrows(), total=len(workdata), desc="intervals", disable=~progress
+    ):
         wg = dat["workchunk"]
         maxlle = map_results.get(dat["workchunk"], None)
         if maxlle is None:
@@ -181,17 +181,15 @@ def main():
         n = len(events)
         nchars = int(np.ceil(np.log10(n)))
         event_numbers = pd.Series(range(n)).astype(str).str.zfill(nchars)
-        events["barcode"] = 'event_' + event_numbers.values
+        events["barcode"] = "event_" + event_numbers.values
     logger.info("Writing results to %s", out_c1)
     write_bed(
-        events[columns + [ "likelihood_c1", "marginal_c1"]],
-        out_c1,
+        events[columns + ["likelihood_c1", "marginal_c1"]], out_c1,
     )
     out_c2 = out_base + "c2.bed"
     logger.info("Writing results to %s", out_c2)
     write_bed(
-        events[columns + ["likelihood_c2", "marginal_c2"]],
-        out_c2,
+        events[columns + ["likelihood_c2", "marginal_c2"]], out_c2,
     )
     logger.info("Finished sucesfully.")
 

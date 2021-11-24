@@ -104,9 +104,7 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--only-check",
-        help="Stop after initial checking.",
-        action="store_true",
+        "--only-check", help="Stop after initial checking.", action="store_true",
     )
     parser.add_argument(
         "--uncorrected",
@@ -119,9 +117,7 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--no-progress",
-        help="Do not show progress.",
-        action="store_true",
+        "--no-progress", help="Do not show progress.", action="store_true",
     )
     parser.add_argument(
         "--cores",
@@ -716,8 +712,7 @@ def write_peaks(bed_c1, bed_c2, overlaps, out_path):
     write_bed(bed_to_summit_bed(bed_c2), out_base + "deconv_c2.summits.bed")
 
     write_bed(
-        overlaps[["seqname", "start", "end", "name", "mean"]],
-        out_base + "overlap.bed",
+        overlaps[["seqname", "start", "end", "name", "mean"]], out_base + "overlap.bed",
     )
     return
 
