@@ -881,7 +881,7 @@ class Deconvoluter:
                 events,
                 obs,
                 suffixes=("", obs_from),
-                left_on="barcode",
+                left_on="name",
                 right_index=True,
                 how="left",
             )
@@ -1076,7 +1076,7 @@ class Deconvoluter:
             reads += self._all_of_file(file, rep)
         logger.info("Making data frame.")
         result_df = pd.DataFrame(
-            reads, columns=["from", "seqname", "start", "end", "barcode"]
+            reads, columns=["from", "seqname", "start", "end", "name"]
         )
         logger.info("Calculating read lengths.")
         result_df["length"] = result_df["end"] - result_df["start"]

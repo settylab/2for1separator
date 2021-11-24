@@ -2,6 +2,7 @@
 import os
 import warnings
 import argparse
+import re
 
 from datetime import datetime
 import tabix
@@ -454,6 +455,17 @@ def parse_args():
         metavar="dir",
     )
     parser.add_argument(
+        "--barcode",
+        help="""Specify a regular expression to  extract cell barcodes from the passed file names.
+        E.g. 'file_([ACGT]*).bed' will extract 'ACCGGC' from '/a/path/a_file_ACCGGC.bed'.
+        Alternatively, pass 'from_bed' to use the fourth column of the bed-file as barcode.
+        If set to empty '', no barcode is saved. (default='from_bed')
+        """,
+        type=str,
+        default="from_bed",
+        metavar="pattern",
+    )
+    parser.add_argument(
         "--seed",
         help="Random state seed to assign intervals to work chunks (default=242567).",
         type=int,
@@ -539,9 +551,7 @@ def parse_args():
         metavar="chrN",
     )
     parser.add_argument(
-        "--no-progress",
-        help="Do not show progress.",
-        action="store_true",
+        "--no-progress", help="Do not show progress.", action="store_true",
     )
     parser.add_argument(
         "--cores",
@@ -702,10 +712,36 @@ def main():
     logger.info("Limiting computation to %i cores.", cores)
     threadpool_limits(limits=int(cores))
     os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
-    fragments_files = {f"file_{i}": file for i, file in enumerate(args.fragment_files)}
+
+    if args.barcode and args.barcode != "from_bed":
+        pattern = re.compile(args.barcode)
+
+        def get_barcode(filename):
+            match = pattern.search(filename)
+            if not pattern.groups:
+                barcode = match.group(0)
+            else:
+                barcode = "_".join(match.groups())
+            barcode = match.group(1)
+            logger.debug("File %s --> Barcode %s", filename, barcode)
+            return barcode
+
+        fragments_files = {
+            get_barcode(file): file for i, file in enumerate(args.fragment_files)
+        }
+    else:
+        fragments_files = {
+            f"file_{i}": file for i, file in enumerate(args.fragment_files)
+        }
+
     dc = Deconvoluter(fragments_files=fragments_files, show_progress=~args.no_progress)
     len_df = dc.all_fragments()
     all_events = dc.envents_from_intervals(len_df)
+    if args.barcode == "from_bed":
+        logger.info("Taking barcode from third columns of bed file.")
+        all_events["barcode"] = all_events["name"]
+    elif args.barcode:
+        all_events["barcode"] = all_events["from"]
     events = filter_sort_events(
         all_events, args.blacklist, args.blacklisted_seqs, progress=~args.no_progress
     )
