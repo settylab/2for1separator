@@ -141,13 +141,17 @@ def envents_from_intervals(interval_df):
     return df
 
 
-def name_peaks(df):
+def name_peaks(df, prefix):
     name_dat = pd.DataFrame(
         list(df.index.str.split("_")),
         columns=["seqname", "interval", "is_peak"],
         index=df.index,
     )
-    df["name"] = "PolS5P_" + name_dat["interval"]
+    df["name"] = (
+        str(prefix) + "_"
+        + name_dat["seqname"] + "_"
+        + name_dat["interval"]
+    )
     return df
 
 
@@ -270,8 +274,8 @@ def main():
         progress=~args.no_progress,
     )
 
-    bed_c1 = sep241peakcalling.inlude_auc(name_peaks(peaks_c1))
-    bed_c2 = sep241peakcalling.inlude_auc(name_peaks(peaks_c2))
+    bed_c1 = sep241peakcalling.inlude_auc(name_peaks(peaks_c1, "c1"))
+    bed_c2 = sep241peakcalling.inlude_auc(name_peaks(peaks_c2, "c2"))
 
     out_path = args.out
     try:

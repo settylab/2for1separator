@@ -615,13 +615,18 @@ def fiter_overlaps(peaks_c1, peaks_c2, overlap_df, threshold=0.5):
     return peaks_c1, peaks_c2, overlap_df
 
 
-def name_peaks(df):
+def name_peaks(df, prefix):
     name_dat = pd.DataFrame(
         list(df.index.str.split("_")),
         columns=["seqname", "interval", "subinterval", "is_peak"],
         index=df.index,
     )
-    df["name"] = "PolS5P_" + name_dat["interval"] + "_" + name_dat["subinterval"]
+    df["name"] = (
+        str(prefix) + "_"
+        + name_dat["seqname"] + "_"
+        + name_dat["interval"] + "_"
+        + name_dat["subinterval"]
+    )
     return df
 
 
@@ -774,8 +779,8 @@ def main():
         progress=~args.no_progress,
     )
 
-    bed_c1 = inlude_auc(name_peaks(peaks_c1))
-    bed_c2 = inlude_auc(name_peaks(peaks_c2))
+    bed_c1 = inlude_auc(name_peaks(peaks_c1, "c1"))
+    bed_c2 = inlude_auc(name_peaks(peaks_c2, "c2"))
 
     if args.out is None:
         out_path, old_file = os.path.split(args.jobdata)
@@ -786,7 +791,7 @@ def main():
         except FileExistsError:
             pass
 
-    logger.info("Writing results to %s...", out_path)
+    logger.info("Writing results to %s/...", out_path)
     write_peaks(bed_c1, bed_c2, overlaps, out_path)
     logger.info("Finished sucesfully.")
 
