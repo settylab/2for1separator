@@ -237,15 +237,37 @@ def read_results(jobdata_file, workdata, progress=True, error=True):
                 map_results[workchunk] = pickle.load(fl)
             last_wg_data = map_results[workchunk]
         except FileNotFoundError:
-            misses.append(str(workchunk))
+            misses.append(workchunk)
     if last_wg_data is None:
         raise NoData("No deconvolution results found.")
     if misses:
-        miss_str = ",".join(misses)
-        logger.warn("Results of the following work chunks are missing: %s", miss_str)
+        
+        missing_strings = list()
+        last_m = -np.inf
+        group_start = None
+        for m in sorted(misses):
+            if m == last_m+1:
+                # consecutive missing work chunks
+                if group_start is None:
+                    group_start = last_m
+            elif m > last_m+1:
+                if group_start is None:
+                    # isolated missing work chunk
+                    missing_strings.append(str(m))
+                else:
+                    # close of consecutive list of missing work chunks
+                    missing_strings.append(f'{group_start}-{m}')
+                    group_start = None
+            last_m = m
+        if group_start is not None:
+            # close of the last group
+            missing_strings.append(f'{group_start}-{m}')
+
+        miss_str = ",".join(missing_strings)
+        logger.warn("Results of the %s following work chunks are missing: %s", f'{len(misses):,}', miss_str)
         if error:
             raise MissingData(
-                f"Results of the following work chunks are missing: {miss_str}"
+                f"Results of the {len(misses):,} following work chunks are missing: {miss_str}"
             )
     return map_results
 
