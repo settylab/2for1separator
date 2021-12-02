@@ -466,6 +466,11 @@ def parse_args():
         metavar="pattern",
     )
     parser.add_argument(
+        "--omit-seqname-postfix",
+        help="For the sequence name omit everything behind the first `_`.",
+        action="store_true",
+    )
+    parser.add_argument(
         "--seed",
         help="Random state seed to assign intervals to work chunks (default=242567).",
         type=int,
@@ -742,6 +747,8 @@ def main():
         all_events["barcode"] = all_events["name"]
     elif args.barcode:
         all_events["barcode"] = all_events["from"]
+    if args.omit_seqname_postfix:
+        all_events["seqname"] = all_events["seqname"].str.replace("_.*", "", regex=True)
     events = filter_sort_events(
         all_events, args.blacklist, args.blacklisted_seqs, progress=~args.no_progress
     )
