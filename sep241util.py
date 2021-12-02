@@ -682,7 +682,7 @@ def plot_gtf(
     return pl
 
 
-class Deconvoluter:
+class DataManager:
     """
     A utility class for sep241 deconvolution.
     """

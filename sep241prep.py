@@ -13,7 +13,7 @@ from tqdm.auto import tqdm
 from KDEpy import FFTKDE
 import multiprocessing
 
-from sep241util import Deconvoluter, LevelSet
+from sep241util import DataManager, LevelSet
 from sep241util import logger, setup_logging
 
 
@@ -734,7 +734,7 @@ def main():
             f"file_{i}": file for i, file in enumerate(args.fragment_files)
         }
 
-    dc = Deconvoluter(fragments_files=fragments_files, show_progress=~args.no_progress)
+    dc = DataManager(fragments_files=fragments_files, show_progress=~args.no_progress)
     len_df = dc.all_fragments()
     all_events = dc.envents_from_intervals(len_df)
     if args.barcode == "from_bed":
