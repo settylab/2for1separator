@@ -688,13 +688,14 @@ class DataManager:
     """
 
     def __init__(
-        self, fragments_files=dict(), gtf_file=None, show_progress=True,
+        self, fragments_files=dict(), gtf_file=None, show_progress=True, comment="#",
     ):
         self.gtf_file = gtf_file
         self.fragments_files = fragments_files
         self.max_smooth_igv_resolution = 1000
         self._cache = dict()
         self.show_progress = show_progress
+        self.comment = "#"
 
     def plot_frag_length(self, log_scale=True):
         alen = self.all_fragments()
@@ -1016,10 +1017,12 @@ class DataManager:
     file_length = {}
 
     def _all_of_file(self, file, rep):
+        comment = self.comment
         h = (
             ("f", "_all_of_file"),
             ("file", file),
             ("rep", rep),
+            ("comment", comment),
         )
         if (result := self._cache.get(h)) is not None:
             return result
@@ -1045,10 +1048,12 @@ class DataManager:
             else:
                 lines = tqdm(buff, desc="reads", disable=~self.show_progress)
             n_fileds = None
+            en_lines = enumerate(lines)
             for i, line in enumerate(lines):
                 if n_fileds is None:
-                    n_fileds = min(4, len(line.decode().split("\t")))
-                    logger.debug("Using %d columns of %s.", n_fileds, file)
+                    if not line.decode().strip().startswith(comment):
+                        n_fileds = min(4, len(line.decode().split("\t")))
+                        logger.debug("Using %d columns of %s.", n_fileds, file)
                 if n_fileds == 3:
                     seq, s, e = line.decode().split("\t")[:3]
                     start = int(s)
@@ -1059,7 +1064,10 @@ class DataManager:
                     start = int(s)
                     end = int(e)
                     reads.append((rep, seq, start, end, bc))
+                elif line.decode().strip().startswith(comment):
+                    continue
                 else:
+                    logger.error("Line %d of %s: %s", i, file, line)
                     raise BEDFormatError(f"Less than 3 columns in bed file {file}.")
         self._cache[h] = reads
         return reads
