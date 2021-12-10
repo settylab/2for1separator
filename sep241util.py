@@ -40,6 +40,9 @@ class BEDFormatError(Exception):
 class NotARegion(Exception):
     pass
 
+class BarcodeError(Exception):
+    pass
+
 
 logger = logging.getLogger("2for1seperator")
 
@@ -187,11 +190,11 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
     usual_diff = diffs.median(axis=1)
     diff_coors = diffs.corrwith(usual_diff)
     idx_flipped = diff_coors < threshold
-    bad_wgs = set(idx_flipped.index[idx_flipped])
+    bad_wgs = set(idx_flipped.index[idx_flipped].astype(int))
 
     if any(idx_flipped):
         w_c1_posterior, w_c2_posterior = posterior_mode_weights(workdata, map_results)
-        wg_string = ",".join([str(wg) for wg in bad_wgs])
+        wg_string = to_grouped_string(bad_wgs)
         post_str_c1 = " ".join([str(int(w)) for w in w_c1_posterior])
         post_str_c2 = " ".join([str(int(w)) for w in w_c2_posterior])
         logger.warn(
@@ -218,10 +221,30 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
         )
     else:
         logger.info("No flipped length distributions found.")
+    return bad_wgs
 
 
 def read_job_data(jobdata_file):
     return pd.read_pickle(jobdata_file)
+
+def to_grouped_string(list_of_integers):
+    grouped_str = ""
+    last_m = -np.inf
+    in_group = False
+    for m in sorted(list_of_integers):
+        if m == last_m+1:
+            in_group = True
+        else:
+            if in_group:
+                # close of last group
+                grouped_str += f"-{last_m}"
+                in_group = False
+            grouped_str += f",{m}"
+        last_m = m
+    if in_group:
+        grouped_str += f"-{last_m}"
+    grouped_str = grouped_str[1:] # remove leading ,
+    return grouped_str
 
 
 def read_results(jobdata_file, workdata, progress=True, error=True):
@@ -241,33 +264,13 @@ def read_results(jobdata_file, workdata, progress=True, error=True):
     if last_wg_data is None:
         raise NoData("No deconvolution results found.")
     if misses:
-        
-        missing_strings = list()
-        last_m = -np.inf
-        group_start = None
-        for m in sorted(misses):
-            if m == last_m+1:
-                # consecutive missing work chunks
-                if group_start is None:
-                    group_start = last_m
-            elif m > last_m+1:
-                if group_start is None:
-                    # isolated missing work chunk
-                    missing_strings.append(str(m))
-                else:
-                    # close of consecutive list of missing work chunks
-                    missing_strings.append(f'{group_start}-{m}')
-                    group_start = None
-            last_m = m
-        if group_start is not None:
-            # close of the last group
-            missing_strings.append(f'{group_start}-{m}')
-
-        miss_str = ",".join(missing_strings)
-        logger.warn("Results of the %s following work chunks are missing: %s", f'{len(misses):,}', miss_str)
+        total_wc = len(workdata["workchunk"].unique())
+        miss_str = to_grouped_string(misses)
+        logger.warn("Results for the following %s of %s work chunks are missing: %s",
+                    f'{len(misses):,}', f'{total_wc:,}', miss_str)
         if error:
             raise MissingData(
-                f"Results of the {len(misses):,} following work chunks are missing: {miss_str}"
+                f"Results for the following {len(misses):,} of {total_wc:,} work chunks are missing: {miss_str}"
             )
     return map_results
 
@@ -689,6 +692,7 @@ class DataManager:
 
     def __init__(
         self, fragments_files=dict(), gtf_file=None, show_progress=True, comment="#",
+        remove_pcr_duplicates = True,
     ):
         self.gtf_file = gtf_file
         self.fragments_files = fragments_files
@@ -696,6 +700,7 @@ class DataManager:
         self._cache = dict()
         self.show_progress = show_progress
         self.comment = "#"
+        self.remove_pcr_duplicates = remove_pcr_duplicates
 
     def plot_frag_length(self, log_scale=True):
         alen = self.all_fragments()
@@ -786,14 +791,15 @@ class DataManager:
         include_events=True,
         nuc_size=120,
         _return_bounds=False,
+        with_name=False,
     ):
         seq, start, end = self._interpret_feature(feature)
-        if seq.isdigit() or seq in ["X", "Y", "M"]:
+        if not seq.startswith("chr"):
             seq = f"chr{seq}"
         lower_bound = start - max_dist
         upper_bound = end + max_dist
         region = "%s:%d-%d" % (seq, lower_bound, upper_bound)
-        atac_intervals = self.get_intervals(region, nuc_size=nuc_size)
+        atac_intervals = self.get_intervals(region, nuc_size=nuc_size, with_name=with_name)
         atac_intervals["seqname"] = seq
         if not include_events:
             return atac_intervals
@@ -1043,10 +1049,10 @@ class DataManager:
                     buff,
                     desc="reads",
                     total=self.file_length[absfile],
-                    disable=~self.show_progress,
+                    disable=not self.show_progress,
                 )
             else:
-                lines = tqdm(buff, desc="reads", disable=~self.show_progress)
+                lines = tqdm(buff, desc="reads", disable=not self.show_progress)
             n_fileds = None
             en_lines = enumerate(lines)
             for i, line in enumerate(lines):
@@ -1072,7 +1078,7 @@ class DataManager:
         self._cache[h] = reads
         return reads
 
-    def all_fragments(self):
+    def all_fragments(self, barcode=None):
         reads = list()
         all_lengths = list()
         for rep, file in self.fragments_files.items():
@@ -1082,18 +1088,40 @@ class DataManager:
         result_df = pd.DataFrame(
             reads, columns=["from", "seqname", "start", "end", "name"]
         )
-        logger.info("Calculating read lengths.")
+        if barcode:
+            if barcode not in ["from", "name"]:
+                raise BarcodeError("Barcode '%s' must be 'from' or 'name'.", barcode)
+            result_df["barcode"] = result_df[barcode]
+        total_reads = len(result_df)
+        if self.remove_pcr_duplicates:
+            if "barcode" in result_df.columns:
+                result_df = result_df.drop_duplicates(subset=["barcode", "seqname", "start", "end"])
+            else:
+                result_df = result_df.drop_duplicates()
+            n_removed = total_reads - len(result_df)
+            faction = n_removed / total_reads
+            logger.info(f"Removed {n_removed:,} of {total_reads:,} ({faction:.2%}) duplicate reads.")
+            total_reads = len(result_df)
+        result_df["start"] = result_df["start"].astype(int)
+        result_df["end"] = result_df["end"].astype(int)
+        logger.info(f"Calculating read lengths for all {total_reads:,} reads.")
         result_df["length"] = result_df["end"] - result_df["start"]
         return result_df
 
-    def get_intervals(self, region, nuc_size=120):
+    def get_intervals(self, region, nuc_size=120, with_name=False):
         intervals = list()
         for rep, fragments_file in self.fragments_files.items():
             tb = tabix.open(fragments_file)
             records = tb.querys(region)
             for record in records:
-                intervals.append((rep, record[0], int(record[1]), int(record[2])))
-        intervals_df = pd.DataFrame(intervals, columns=["from", "seq", "start", "end"])
+                if with_name:
+                    intervals.append((rep, record[0], int(record[1]), int(record[2]), record[3]))
+                else:
+                    intervals.append((rep, record[0], int(record[1]), int(record[2])))
+        if with_name:
+            intervals_df = pd.DataFrame(intervals, columns=["from", "seq", "start", "end", "barcode"])
+        else:
+            intervals_df = pd.DataFrame(intervals, columns=["from", "seq", "start", "end"])
         intervals_df["length"] = np.abs(intervals_df["end"] - intervals_df["start"])
         intervals_df["read_type"] = np.where(
             intervals_df["length"] > nuc_size, f">{nuc_size}", f"≤{nuc_size}"

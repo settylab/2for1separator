@@ -70,6 +70,11 @@ def parse_args():
         metavar="chr:start-end",
     )
     parser.add_argument(
+        "--exclude-flipped",
+        help="Exclude results from workchunks with flipped length distribution.",
+        action="store_true",
+    )
+    parser.add_argument(
         "--span",
         help="The span of base pairs with the same value in the ouptut bigwig (default=10).",
         type=int,
@@ -163,10 +168,10 @@ def make_bigwigs(
     max_log_value = None
 
     for name, dat in tqdm(
-        workdata.iterrows(), total=len(workdata), desc="intervals", disable=~progress
+        workdata.iterrows(), total=len(workdata), desc="intervals", disable=not progress
     ):
         wg = dat["workchunk"]
-        maxlle = map_results.get(dat["workchunk"], None)
+        maxlle = map_results.get(wg, None)
         if maxlle is None:
             continue
         if f"f_c1_{name}" not in maxlle.keys():
@@ -248,7 +253,7 @@ def main():
     logger.info("Reading deconvolution results.")
     try:
         map_results = read_results(
-            args.jobdata, workdata, progress=~args.no_progress, error=~args.force
+            args.jobdata, workdata, progress=not args.no_progress, error=not args.force
         )
     except MissingData:
         raise MissingData(
@@ -257,7 +262,11 @@ def main():
         )
 
     if not args.no_check:
-        check_length_distribution_flip(workdata, map_results)
+        bad_wgs = check_length_distribution_flip(workdata, map_results)
+        if args.exclude_flipped:
+            logger.info("Removing flipped workgroups from results.")
+            for idx in bad_wgs:
+                del map_results[idx]
 
     if args.out is None:
         out_path, old_file = os.path.split(args.jobdata)
@@ -273,7 +282,7 @@ def main():
         span=args.span,
         unit=args.unit,
         region=args.region,
-        progress=~args.no_progress,
+        progress=not args.no_progress,
     )
     logger.info("Finished sucesfully.")
 

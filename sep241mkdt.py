@@ -271,7 +271,7 @@ def main():
         uncorrected=args.uncorrected,
         span=args.span,
         cores=cores,
-        progress=~args.no_progress,
+        progress=not args.no_progress,
     )
 
     bed_c1 = sep241peakcalling.inlude_auc(name_peaks(peaks_c1, "c1"))

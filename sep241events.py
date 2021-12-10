@@ -2,6 +2,7 @@
 import os
 import argparse
 import pickle
+import logging
 
 import numpy as np
 import pandas as pd
@@ -65,6 +66,11 @@ def parse_args():
         help="Make bigwigs even if some results are missing.",
         action="store_true",
     )
+    parser.add_argument(
+        "--exclude-flipped",
+        help="Exclude results from workchunks with flipped length distribution.",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -76,7 +82,7 @@ def likelihoods_per_cut(workdata, map_results, progress=True):
     missing_data_wg = set()
 
     for name, dat in tqdm(
-        workdata.iterrows(), total=len(workdata), desc="intervals", disable=~progress
+        workdata.iterrows(), total=len(workdata), desc="intervals", disable=not progress
     ):
         wg = dat["workchunk"]
         maxlle = map_results.get(dat["workchunk"], None)
@@ -111,6 +117,7 @@ def likelihoods_per_cut(workdata, map_results, progress=True):
 
 def main():
     args = parse_args()
+    logging.getLogger("filelock").setLevel(logging.ERROR) # theano produces a lot
     setup_logging(args.logLevel, args.logfile)
     logger.debug("Loglevel is on DEBUG.")
 
@@ -120,7 +127,7 @@ def main():
     logger.info("Reading deconvolution results.")
     try:
         map_results = read_results(
-            args.jobdata, workdata, progress=~args.no_progress, error=~args.force
+            args.jobdata, workdata, progress=not args.no_progress, error=not args.force
         )
     except MissingData:
         raise MissingData(
@@ -128,10 +135,14 @@ def main():
             "call peaks regardless."
         )
     if not args.no_check:
-        check_length_distribution_flip(workdata, map_results)
+        bad_wgs = check_length_distribution_flip(workdata, map_results)
+        if args.exclude_flipped:
+            logger.info("Removing flipped workgroups from results.")
+            for idx in bad_wgs:
+                del map_results[idx]
 
     logger.info("Getting location marginal likelihoods.")
-    events = likelihoods_per_cut(workdata, map_results, progress=~args.no_progress)
+    events = likelihoods_per_cut(workdata, map_results, progress=not args.no_progress)
 
     logger.info("Producing posterior length marginal likelihood distributions.")
     dc_args = next(iter(map_results.values()))["arguments"]

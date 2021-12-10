@@ -144,14 +144,15 @@ def get_intervals(boolean_selection, region_padding):
     start_end[1:] -= start_end[:-1]
     starts = np.where(start_end == 1)[0]
     ends = np.where(start_end == -1)[0]
-    if ends[-1] == len(start_end):
-        # last position is outside of grid and musst be avoided
-        ends[-1] -= 1
-    interval_sizes = ends - starts
+    if len(starts) != 0:
+        if ends[-1] == len(start_end):
+            # last position is outside of grid and musst be avoided
+            ends[-1] -= 1
+        interval_sizes = ends - starts
 
-    logger.info(
-        f"...in {len(starts):,} intervals with a maximum size of {interval_sizes.max():,} bp."
-    )
+        logger.info(
+            f"...in {len(starts):,} intervals with a maximum size of {interval_sizes.max():,} bp."
+        )
     return starts, ends
 
 
@@ -471,6 +472,11 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
+        "--keep-duplicates",
+        help="Do not remove identical reads (PCR duplicates).",
+        action="store_true",
+    )
+    parser.add_argument(
         "--seed",
         help="Random state seed to assign intervals to work chunks (default=242567).",
         type=int,
@@ -549,9 +555,9 @@ def parse_args():
     )
     parser.add_argument(
         "--blacklisted-seqs",
-        help="Sequences to exclude from the deconvolution (default=chrM).",
+        help="Sequences to exclude from the deconvolution (default=chrM chrUn chrEBV).",
         type=str,
-        default=["chrM"],
+        default=["chrM", "chrUn", "chrEBV"],
         nargs="+",
         metavar="chrN",
     )
@@ -592,6 +598,8 @@ def get_intervals_by_kde(events, min_density, selection_padding, kde_bw=200):
             "name": [f"{seqname}_{i}" for i in range(len(gstarts))],
         }
     return intervalls_small
+
+
 
 
 def make_work_packages(
@@ -651,8 +659,8 @@ def make_work_packages(
                 logger.warning(
                     "%s:%s-%s: %s",
                     seqname,
-                    "{:,d}".format(start),
-                    "{:,d}".format(end),
+                    str(start),
+                    str(end),
                     w.message,
                 )
             subdivided_ints[i] = {
@@ -719,34 +727,41 @@ def main():
     os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
 
     if args.barcode and args.barcode != "from_bed":
-        pattern = re.compile(args.barcode)
+        bc_pattern = re.compile(args.barcode)
 
         def get_barcode(filename):
-            match = pattern.search(filename)
-            if not pattern.groups:
+            match = bc_pattern.search(filename)
+            if match is None:
+                logger.warn("Omitting file with no barcode match: %s", filename)
+                return None
+            elif not bc_pattern.groups:
                 barcode = match.group(0)
             else:
                 barcode = "_".join(match.groups())
-            barcode = match.group(1)
-            logger.debug("File %s --> Barcode %s", filename, barcode)
+                barcode = match.group(1)
             return barcode
 
         fragments_files = {
             get_barcode(file): file for i, file in enumerate(args.fragment_files)
         }
+        fragments_files.pop(None, None)
     else:
         fragments_files = {
             f"file_{i}": file for i, file in enumerate(args.fragment_files)
         }
 
-    dc = DataManager(fragments_files=fragments_files, show_progress=~args.no_progress)
-    len_df = dc.all_fragments()
-    all_events = dc.envents_from_intervals(len_df)
+    dc = DataManager(
+        fragments_files = fragments_files,
+        show_progress = not args.no_progress,
+        remove_pcr_duplicates = not args.keep_duplicates,
+    )
     if args.barcode == "from_bed":
-        logger.info("Taking barcode from third columns of bed file.")
-        all_events["barcode"] = all_events["name"]
+        len_df = dc.all_fragments(barcode="name")
     elif args.barcode:
-        all_events["barcode"] = all_events["from"]
+        logger.info("Taking barcode from third columns of bed file.")
+        len_df = dc.all_fragments(barcode="from")
+    
+    all_events = dc.envents_from_intervals(len_df)
     if args.omit_seqname_postfix:
         all_events["seqname"] = all_events["seqname"].str.replace("_.*", "", regex=True)
     events = filter_sort_events(
@@ -794,14 +809,10 @@ def main():
         for wc in $(seq 0 {n_wg-1}); do
             ./sep241deconvolve.py {args.out} --workchunk $wc
         done
-
-    Please consider adjusting and passing the following additional arguments:
-
-        --c1-cov 'Matern32(500)' --c2-cov 'Matern32(2000)' \\
-        --c1-dirichlet-prior 450 100 10 1 --c2-dirichlet-prior 150 300 50 10
-
     """
     )
+    with open(args.out+".njobs", "w") as buff:
+        buff.write(str(n_wg))
 
 
 if __name__ == "__main__":

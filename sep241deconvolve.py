@@ -346,14 +346,17 @@ def make_model(
                 pm.math.switch(length_diff > 0, 0, -length_diff * 1e99),
             )
 
-        for name, dat in events.iterrows():
+        n_intervals = len(events)
+        for i, (name, dat) in enumerate(events.iterrows()):
 
             unique_locations, log_loc_weight, interleave_index = format_cuts(
                 dat["cuts"]["location"]
             )
             lengths = dat["cuts"]["length"].values
             logger.info(
-                "Compiling intervall %s with %i cuts in %i locations.",
+                "Compiling intervall (%d/%d) %s with %i cuts in %i locations.",
+                i+1,
+                n_intervals,
                 name,
                 len(dat["cuts"]),
                 len(unique_locations),

@@ -254,7 +254,7 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
 
 
 def interpolate(
-    workdata, map_results, c1_sigma, c2_sigma, step_size, cores=8, progress=True
+    workdata, map_results, c1_sigma, c2_sigma, step_size, cores=8, progress=False
 ):
     logger.info("Splitting data into intervals.")
     jobs, signal_c1_list_global, signal_c2_list_global = make_interpolation_jobs(
@@ -276,7 +276,7 @@ def interpolate(
             for df in tqdm(
                 pool.imap(interpolate_entry, jobs, 10),
                 total=len(jobs),
-                disable=~progress,
+                disable=not progress,
                 desc="intervals",
             ):
                 results_list.append(df)
@@ -434,7 +434,7 @@ def tracks_to_intervals(comb_data, step_size, cores=8, progress=True):
             for peaks_c1, peaks_c2 in tqdm(
                 pool.imap(both_tracks_to_intervlas, jobs),
                 total=len(jobs),
-                disable=~progress,
+                disable=not progress,
                 desc="sequence",
             ):
                 peaks_list_c1.append(peaks_c1)
@@ -470,7 +470,7 @@ def make_overlap_report(
         "cosine_distance",
     ]
     for seqname, loc_comb_data in tqdm(
-        sel_comb_data.groupby("seqname"), disable=~progress, desc="sequence"
+        sel_comb_data.groupby("seqname"), disable=not progress, desc="sequence"
     ):
         loc_peaks_c1 = peaks_c1[peaks_c1["seqname"] == seqname].sort_values("start")
         loc_peaks_c2 = peaks_c2[peaks_c2["seqname"] == seqname].sort_values("start")
@@ -738,7 +738,7 @@ def main():
     logger.info("Reading deconvolution results.")
     try:
         map_results = read_results(
-            args.jobdata, workdata, progress=~args.no_progress, error=not args.force
+            args.jobdata, workdata, progress=not args.no_progress, error=not args.force
         )
     except MissingData:
         raise MissingData(
@@ -760,7 +760,7 @@ def main():
         args.c2_smooth,
         args.span,
         cores=cores,
-        progress=~args.no_progress,
+        progress=not args.no_progress,
     )
 
     logger.info("Calling peaks.")
@@ -776,7 +776,7 @@ def main():
         c2_min_peak_size=args.c2_min_peak_size,
         span=args.span,
         cores=cores,
-        progress=~args.no_progress,
+        progress=not args.no_progress,
     )
 
     bed_c1 = inlude_auc(name_peaks(peaks_c1, "c1"))
