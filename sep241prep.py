@@ -746,9 +746,7 @@ def main():
         }
         fragments_files.pop(None, None)
     else:
-        fragments_files = {
-            f"file_{i}": file for i, file in enumerate(args.fragment_files)
-        }
+        fragments_files = {file: file for file in args.fragment_files}
 
     dc = DataManager(
         fragments_files = fragments_files,
@@ -756,9 +754,10 @@ def main():
         remove_pcr_duplicates = not args.keep_duplicates,
     )
     if args.barcode == "from_bed":
+        logger.info("Taking barcode from third columns of bed file.")
         len_df = dc.all_fragments(barcode="name")
     elif args.barcode:
-        logger.info("Taking barcode from third columns of bed file.")
+        logger.info("Taking barcode from file name regex.")
         len_df = dc.all_fragments(barcode="from")
     
     all_events = dc.envents_from_intervals(len_df)
