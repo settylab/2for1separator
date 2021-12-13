@@ -2,6 +2,7 @@
 import os
 import warnings
 import argparse
+import re
 
 from datetime import datetime
 import tabix
@@ -12,8 +13,8 @@ from tqdm.auto import tqdm
 from KDEpy import FFTKDE
 import multiprocessing
 
-from dcbackend import Deconvoluter, LevelSet
-from dcbackend import logger, setup_logging
+from sep241util import DataManager, LevelSet
+from sep241util import logger, setup_logging
 
 
 class RegionTooSmall(Exception):
@@ -28,7 +29,9 @@ class SubdivisionError(Exception):
     pass
 
 
-def filter_sort_events(events, blacklist=None, blacklisted_sequences=set(), progress=True):
+def filter_sort_events(
+    events, blacklist=None, blacklisted_sequences=set(), progress=True
+):
     grouped = events.groupby("seqname")
     if blacklist:
         tb = tabix.open(blacklist)
@@ -107,8 +110,11 @@ def full_kde_grid(x, xmin=None, xmax=None):
     return grid
 
 
-def get_kde(cut_locations, kde_bw=500, kernel="gaussian", xmin=None, xmax=None):
-    grid = full_kde_grid(cut_locations, xmin, xmax)
+def get_kde(
+    cut_locations, kde_bw=500, kernel="gaussian", xmin=None, xmax=None, grid=None
+):
+    if grid is None:
+        grid = full_kde_grid(cut_locations, xmin, xmax)
     kernel = FFTKDE(kernel=kernel, bw=kde_bw)
     kernel = kernel.fit(cut_locations)
     density = kernel.evaluate(grid)
@@ -138,14 +144,15 @@ def get_intervals(boolean_selection, region_padding):
     start_end[1:] -= start_end[:-1]
     starts = np.where(start_end == 1)[0]
     ends = np.where(start_end == -1)[0]
-    if ends[-1] == len(start_end):
-        # last position is outside of grid and musst be avoided
-        ends[-1] -= 1
-    interval_sizes = ends - starts
+    if len(starts) != 0:
+        if ends[-1] == len(start_end):
+            # last position is outside of grid and musst be avoided
+            ends[-1] -= 1
+        interval_sizes = ends - starts
 
-    logger.info(
-        f"...in {len(starts):,} intervals with a maximum size of {interval_sizes.max():,} bp."
-    )
+        logger.info(
+            f"...in {len(starts):,} intervals with a maximum size of {interval_sizes.max():,} bp."
+        )
     return starts, ends
 
 
@@ -188,7 +195,7 @@ def subdivide(
     region_size = end - start
     if region_size <= 2 * region_padding:
         raise RegionTooSmall(
-            "Region cannot be subdevided, smaller than three paddings."
+            "Region cannot be subdivided, smaller than three paddings."
             f"{region_size: = } {3*region_padding: = }"
         )
     if start > np.min(lcuts):
@@ -449,8 +456,29 @@ def parse_args():
         metavar="dir",
     )
     parser.add_argument(
+        "--barcode",
+        help="""Specify a regular expression to  extract cell barcodes from the passed file names.
+        E.g. 'file_([ACGT]*).bed' will extract 'ACCGGC' from '/a/path/a_file_ACCGGC.bed'.
+        Alternatively, pass 'from_bed' to use the fourth column of the bed-file as barcode.
+        If set to empty '', no barcode is saved. (default='from_bed')
+        """,
+        type=str,
+        default="from_bed",
+        metavar="pattern",
+    )
+    parser.add_argument(
+        "--omit-seqname-postfix",
+        help="For the sequence name omit everything behind the first `_`.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--keep-duplicates",
+        help="Do not remove identical reads (PCR duplicates).",
+        action="store_true",
+    )
+    parser.add_argument(
         "--seed",
-        help="Random state seed to assign intervals to work chunks.",
+        help="Random state seed to assign intervals to work chunks (default=242567).",
         type=int,
         default=242567,
         metavar="int",
@@ -527,16 +555,14 @@ def parse_args():
     )
     parser.add_argument(
         "--blacklisted-seqs",
-        help="Sequences to exclude from the deconvolution (default=chrM).",
+        help="Sequences to exclude from the deconvolution (default=chrM chrUn chrEBV).",
         type=str,
-        default=["chrM"],
+        default=["chrM", "chrUn", "chrEBV"],
         nargs="+",
         metavar="chrN",
     )
     parser.add_argument(
-        "--no-progress",
-        help="Do not show progress.",
-        action="store_true",
+        "--no-progress", help="Do not show progress.", action="store_true",
     )
     parser.add_argument(
         "--cores",
@@ -574,6 +600,8 @@ def get_intervals_by_kde(events, min_density, selection_padding, kde_bw=200):
     return intervalls_small
 
 
+
+
 def make_work_packages(
     intervalls,
     cut_df,
@@ -585,7 +613,7 @@ def make_work_packages(
     cuts_per_seq = {seq: df for seq, df in cut_df.groupby("seqname")}
     for i, (seqname, data) in enumerate(intervalls.items()):
         logger.info(
-            f"Subdeviding intervals in sequence {seqname} [{i+1}/{len(intervalls)}]."
+            f"Subdividing intervals in sequence {seqname} [{i+1}/{len(intervalls)}]."
         )
         starts, ends = data["start"], data["end"]
         all_cuts = cuts_per_seq.get(seqname)
@@ -631,8 +659,8 @@ def make_work_packages(
                 logger.warning(
                     "%s:%s-%s: %s",
                     seqname,
-                    "{:,d}".format(start),
-                    "{:,d}".format(end),
+                    str(start),
+                    str(end),
                     w.message,
                 )
             subdivided_ints[i] = {
@@ -659,7 +687,7 @@ def make_work_packages(
                 if nlc > largest_size:
                     largest_size = nlc
                     largest_idx = j
-            subdivided_ints[i]['largest'] = largest_idx
+            subdivided_ints[i]["largest"] = largest_idx
             if largest_size > richest_sub_int["size"]:
                 richest_sub_int = {
                     "size": largest_size,
@@ -687,7 +715,7 @@ def main():
     setup_logging(args.logLevel, args.logfile)
     out_path, _ = os.path.split(args.out)
     if not os.path.isdir(out_path):
-        logger.info('Making directory %s', out_path)
+        logger.info("Making directory %s", out_path)
         os.mkdir(out_path)
     if not args.cores:
         cores = multiprocessing.cpu_count()
@@ -697,10 +725,44 @@ def main():
     logger.info("Limiting computation to %i cores.", cores)
     threadpool_limits(limits=int(cores))
     os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
-    fragments_files = {f"file {i}": file for i, file in enumerate(args.fragment_files)}
-    dc = Deconvoluter(fragments_files=fragments_files, show_progress=~args.no_progress)
-    len_df = dc.all_fragments()
+
+    if args.barcode and args.barcode != "from_bed":
+        bc_pattern = re.compile(args.barcode)
+
+        def get_barcode(filename):
+            match = bc_pattern.search(filename)
+            if match is None:
+                logger.warn("Omitting file with no barcode match: %s", filename)
+                return None
+            elif not bc_pattern.groups:
+                barcode = match.group(0)
+            else:
+                barcode = "_".join(match.groups())
+                barcode = match.group(1)
+            return barcode
+
+        fragments_files = {
+            get_barcode(file): file for i, file in enumerate(args.fragment_files)
+        }
+        fragments_files.pop(None, None)
+    else:
+        fragments_files = {file: file for file in args.fragment_files}
+
+    dc = DataManager(
+        fragments_files = fragments_files,
+        show_progress = not args.no_progress,
+        remove_pcr_duplicates = not args.keep_duplicates,
+    )
+    if args.barcode == "from_bed":
+        logger.info("Taking barcode from third columns of bed file.")
+        len_df = dc.all_fragments(barcode="name")
+    elif args.barcode:
+        logger.info("Taking barcode from file name regex.")
+        len_df = dc.all_fragments(barcode="from")
+    
     all_events = dc.envents_from_intervals(len_df)
+    if args.omit_seqname_postfix:
+        all_events["seqname"] = all_events["seqname"].str.replace("_.*", "", regex=True)
     events = filter_sort_events(
         all_events, args.blacklist, args.blacklisted_seqs, progress=~args.no_progress
     )
@@ -746,14 +808,10 @@ def main():
         for wc in $(seq 0 {n_wg-1}); do
             ./sep241deconvolve.py {args.out} --workchunk $wc
         done
-
-    Please consider adjusting and passing the following additional arguments:
-
-        --c1-cov 'Matern32(500)' --c2-cov 'Matern32(2000)' \\
-        --c1-dirichlet-prior 450 100 10 1 --c2-dirichlet-prior 150 300 50 10
-
     """
     )
+    with open(args.out+".njobs", "w") as buff:
+        buff.write(str(n_wg))
 
 
 if __name__ == "__main__":

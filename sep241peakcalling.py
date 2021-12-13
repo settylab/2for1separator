@@ -10,10 +10,10 @@ from tqdm.auto import tqdm
 from threadpoolctl import threadpool_limits
 import multiprocessing
 
-from dcbackend import logger, setup_logging
-from dcbackend import read_job_data, read_results
-from dcbackend import check_length_distribution_flip
-from dcbackend import MissingData
+from sep241util import logger, setup_logging
+from sep241util import read_job_data, read_results, write_bed, detect_cores
+from sep241util import check_length_distribution_flip
+from sep241util import MissingData
 
 
 def parse_args():
@@ -46,7 +46,7 @@ def parse_args():
         "--out",
         help="Output directory (default is the path of the jobdata).",
         type=str,
-        metavar="dir",
+        metavar="out_dir",
     )
     parser.add_argument(
         "--c1-min-peak-size",
@@ -104,8 +104,11 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--only-check",
-        help="Stop after initial checking.",
+        "--only-check", help="Stop after initial checking.", action="store_true",
+    )
+    parser.add_argument(
+        "--uncorrected",
+        help="Do not correct cut ratio estimate with Bayesian prior.",
         action="store_true",
     )
     parser.add_argument(
@@ -114,9 +117,7 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--no-progress",
-        help="Do not show progress.",
-        action="store_true",
+        "--no-progress", help="Do not show progress.", action="store_true",
     )
     parser.add_argument(
         "--cores",
@@ -170,15 +171,20 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
     signal_c2_list_global = list()
     location_list = list()
     last_name = ""
-    
+
     max_log_value = None
+    missing_data_wg = set()
 
     for name, dat in tqdm(workdata.iterrows(), total=len(workdata), desc="intervals"):
         wg = dat["workchunk"]
         maxlle = map_results.get(dat["workchunk"], None)
         if maxlle is None:
+            if wg not in missing_data_wg:
+                logger.warning("Data of workchunk %d is None.", wg)
+                missing_data_wg.add(wg)
             continue
         if f"f_c1_{name}" not in maxlle.keys():
+            logger.warning("Marginal likelihood results not found in workchunk %d.", wg)
             continue
         if max_log_value is None:
             max_log_value = np.log(np.finfo(maxlle[f"f_c1_{name}"].dtype).max)
@@ -188,7 +194,7 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
         locations = dat["cuts"]["location"][start_idx:end_idx].values.astype(int)
 
         idx = dat["cuts"]["location"].rank(method="dense").astype(int) - 1
-        
+
         log_signal_c1 = maxlle[f"f_c1_{name}"][idx][start_idx:end_idx]
         log_signal_c2 = maxlle[f"f_c2_{name}"][idx][start_idx:end_idx]
         if np.max(log_signal_c1) > max_log_value:
@@ -205,8 +211,7 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
             continue
         signal_c1 = np.exp(log_signal_c1)
         signal_c2 = np.exp(log_signal_c2)
-        
-        
+
         signal_c1_list_global.append(signal_c1)
         signal_c2_list_global.append(signal_c2)
         base_name, _ = name.split(".")
@@ -249,7 +254,7 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
 
 
 def interpolate(
-    workdata, map_results, c1_sigma, c2_sigma, step_size, cores=8, progress=True
+    workdata, map_results, c1_sigma, c2_sigma, step_size, cores=8, progress=False
 ):
     logger.info("Splitting data into intervals.")
     jobs, signal_c1_list_global, signal_c2_list_global = make_interpolation_jobs(
@@ -258,20 +263,20 @@ def interpolate(
     results_list = list()
     if c1_sigma or c2_sigma:
         if not c1_sigma:
-            smooth_msg = 'c2'
+            smooth_msg = "c2"
         elif not c1_sigma:
-            smooth_msg = 'c1'
+            smooth_msg = "c1"
         else:
-            smooth_msg = 'c1 and c2'
+            smooth_msg = "c1 and c2"
     else:
-        smooth_msg = 'none'
+        smooth_msg = "none"
     logger.info("Interpolating + smoothening %s.", smooth_msg)
     with threadpool_limits(limits=1):
         with multiprocessing.Pool(cores) as pool:
             for df in tqdm(
                 pool.imap(interpolate_entry, jobs, 10),
                 total=len(jobs),
-                disable=~progress,
+                disable=not progress,
                 desc="intervals",
             ):
                 results_list.append(df)
@@ -280,7 +285,7 @@ def interpolate(
     return comb_data, signal_c1_list_global, signal_c2_list_global
 
 
-def target_fractions(comb_data, fraction_in_peaks):
+def target_fractions(comb_data, fraction_in_peaks, uncorrected=False):
     total_c1 = comb_data["c1"].sum()
     total_c2 = comb_data["c2"].sum()
     total = total_c1 + total_c2
@@ -289,6 +294,9 @@ def target_fractions(comb_data, fraction_in_peaks):
     logger.info(
         f"Integral ratio: {fraction_c1_uncorrected:.1%} c1 and {fraction_c2_uncorrected:.1%} c2 cuts."
     )
+    if uncorrected:
+        fraction_c1 = fraction_in_peaks * total_c1 / total
+        fraction_c2 = fraction_in_peaks * total_c2 / total
 
     equal_dist_cuts = total
     total_c1 = comb_data["c1"].sum() + (equal_dist_cuts / 2)
@@ -299,6 +307,17 @@ def target_fractions(comb_data, fraction_in_peaks):
     logger.info(
         f"Bayesian estimation: {fraction_c1_permissive:.1%} c1 and {fraction_c2_permissive:.1%} c2 cuts."
     )
+
+    if uncorrected:
+        logger.info(
+            f"Estimating an uncorrected total of {fraction_c1:.1%} c1 and {fraction_c2:.1%} c2 cuts in peaks."
+        )
+        return (
+            fraction_c1,
+            fraction_c2,
+            fraction_c1_uncorrected,
+            fraction_c2_uncorrected,
+        )
 
     fraction_c1 = fraction_in_peaks * total_c1 / total
     fraction_c2 = fraction_in_peaks * total_c2 / total
@@ -329,7 +348,9 @@ def mark_peaks(
     bound_c1 = np.quantile(np.hstack(signal_c1_list_global), 1 - fraction_c1)
     if "c1 smooth" in comb_data.keys():
         logger.info("Averaging original and smoothed signal of c1.")
-        comb_data["c1 mean"] = np.mean(comb_data.loc[:, ["c1", "c1 smooth"]].values, axis=1)
+        comb_data["c1 mean"] = np.mean(
+            comb_data.loc[:, ["c1", "c1 smooth"]].values, axis=1
+        )
         comb_data["c1_peak"] = (comb_data["c1 mean"] > bound_c1) | (
             comb_data["c1 smooth"] > bound_c1
         )
@@ -344,7 +365,9 @@ def mark_peaks(
     bound_c2 = np.quantile(np.hstack(signal_c2_list_global), 1 - fraction_c2)
     if "c2 smooth" in comb_data.keys():
         logger.info("Averaging original and smoothed signal of c2.")
-        comb_data["c2 mean"] = np.mean(comb_data.loc[:, ["c2", "c2 smooth"]].values, axis=1)
+        comb_data["c2 mean"] = np.mean(
+            comb_data.loc[:, ["c2", "c2 smooth"]].values, axis=1
+        )
         comb_data["c2_peak"] = (comb_data["c2 mean"] > bound_c2) | (
             comb_data["c2 smooth"] > bound_c2
         )
@@ -389,6 +412,7 @@ def track_to_interval(loc_comb_data, comp_name, step_size, seqname):
     ).sort_values("start")
     return peaks
 
+
 def both_tracks_to_intervlas(job):
     loc_comb_data, step_size, seqname = job
     peaks_c1 = track_to_interval(loc_comb_data, "c1", step_size, seqname)
@@ -410,7 +434,7 @@ def tracks_to_intervals(comb_data, step_size, cores=8, progress=True):
             for peaks_c1, peaks_c2 in tqdm(
                 pool.imap(both_tracks_to_intervlas, jobs),
                 total=len(jobs),
-                disable=~progress,
+                disable=not progress,
                 desc="sequence",
             ):
                 peaks_list_c1.append(peaks_c1)
@@ -446,7 +470,7 @@ def make_overlap_report(
         "cosine_distance",
     ]
     for seqname, loc_comb_data in tqdm(
-        sel_comb_data.groupby("seqname"), disable=~progress, desc="sequence"
+        sel_comb_data.groupby("seqname"), disable=not progress, desc="sequence"
     ):
         loc_peaks_c1 = peaks_c1[peaks_c1["seqname"] == seqname].sort_values("start")
         loc_peaks_c2 = peaks_c2[peaks_c2["seqname"] == seqname].sort_values("start")
@@ -577,7 +601,9 @@ def fiter_overlaps(peaks_c1, peaks_c2, overlap_df, threshold=0.5):
     overlapping_c1 = peaks_c1.loc[bad_idx_c1, :]
     bad_idx_c2 = fractions_c2.index[fractions_c2 > threshold]
     overlapping_c2 = peaks_c2.loc[bad_idx_c2, :]
-    overlap_df = merge_overlapping_intervals(pd.concat([overlapping_c1, overlapping_c2]))
+    overlap_df = merge_overlapping_intervals(
+        pd.concat([overlapping_c1, overlapping_c2])
+    )
 
     peaks_c1 = peaks_c1.loc[peaks_c1.index.difference(bad_idx_c1), :].sort_values(
         ["seqname", "start"]
@@ -589,23 +615,24 @@ def fiter_overlaps(peaks_c1, peaks_c2, overlap_df, threshold=0.5):
     return peaks_c1, peaks_c2, overlap_df
 
 
-def name_peaks(df):
+def name_peaks(df, prefix):
     name_dat = pd.DataFrame(
         list(df.index.str.split("_")),
         columns=["seqname", "interval", "subinterval", "is_peak"],
         index=df.index,
     )
-    df["name"] = "PolS5P_" + name_dat["interval"] + "_" + name_dat["subinterval"]
+    df["name"] = (
+        str(prefix) + "_"
+        + name_dat["seqname"] + "_"
+        + name_dat["interval"] + "_"
+        + name_dat["subinterval"]
+    )
     return df
 
 
 def inlude_auc(df):
     df["auc"] = df["mean"] * df["length"]
     return df
-
-
-def write_bed(bed_df, out_path):
-    bed_df.to_csv(out_path, sep="\t", header=False, index=False)
 
 
 def bed_to_summit_bed(df):
@@ -622,58 +649,26 @@ def bed_to_summit_bed(df):
     return summit_df
 
 
-def main():
-    args = parse_args()
-    setup_logging(args.logLevel, args.logfile)
-    logger.debug("Loglevel is on DEBUG.")
-    if not args.cores:
-        cores = multiprocessing.cpu_count()
-        logger.info("Detecting %s compute cores.", cores)
-    else:
-        cores = args.cores
-    logger.info("Limiting computation to %i cores.", cores)
-    threadpool_limits(limits=int(cores))
-    os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
-
-    logger.info("Reading jobdata.")
-    workdata = read_job_data(args.jobdata)
-    work_coverage = estimated_deconvolved_fraction(workdata)
-    logger.info(f"At most {work_coverage:.2%} of the geome is deconvolved.")
-    logger.info("Reading deconvolution results.")
-    try:
-        map_results = read_results(
-            args.jobdata, workdata, progress=~args.no_progress, error=~args.force
-        )
-    except MissingData:
-        raise MissingData(
-            "Results are missing. Complete missing work chunks or pass --force to "
-            "call peaks regardless."
-        )
-
-    if not args.no_check:
-        logger.info("Checking length distribution flip.")
-        check_length_distribution_flip(workdata, map_results)
-    
-    if args.only_check:
-        return
-
-    logger.info("Processing deconvolved tracks.")
-    comb_data, signal_c1_list_global, signal_c2_list_global = interpolate(
-        workdata,
-        map_results,
-        args.c1_smooth,
-        args.c2_smooth,
-        args.span,
-        cores=cores,
-        progress=~args.no_progress,
-    )
-
+def call_peaks(
+    comb_data,
+    signal_c1_list_global,
+    signal_c2_list_global,
+    work_coverage=1.0,
+    fraction_in_peaks=0.5,
+    fraction_overlap=0.5,
+    uncorrected=False,
+    c1_min_peak_size=100,
+    c2_min_peak_size=400,
+    span=10,
+    cores=16,
+    progress=False,
+):
     (
         fraction_c1,
         fraction_c2,
         fraction_c1_permissive,
         fraction_c2_permissive,
-    ) = target_fractions(comb_data, args.fraction_in_peaks)
+    ) = target_fractions(comb_data, fraction_in_peaks, uncorrected=uncorrected)
     logger.info("Selecting peak candidates.")
     comb_data = mark_peaks(
         comb_data,
@@ -684,11 +679,9 @@ def main():
         work_coverage,
     )
     logger.info("Converting peak signal to intervals.")
-    peaks_c1, peaks_c2 = tracks_to_intervals(
-        comb_data, args.span, cores, progress=~args.no_progress
-    )
-    peaks_c1 = peaks_c1[peaks_c1["length"] > args.c1_min_peak_size]
-    peaks_c2 = peaks_c2[peaks_c2["length"] > args.c2_min_peak_size]
+    peaks_c1, peaks_c2 = tracks_to_intervals(comb_data, span, cores, progress=progress)
+    peaks_c1 = peaks_c1[peaks_c1["length"] > c1_min_peak_size]
+    peaks_c2 = peaks_c2[peaks_c2["length"] > c2_min_peak_size]
 
     logger.info("Analyzing overlaps.")
     overlap_df = make_overlap_report(
@@ -697,30 +690,21 @@ def main():
         peaks_c2,
         fraction_c1_permissive,
         fraction_c2_permissive,
-        progress=~args.no_progress,
+        progress=progress,
     )
 
     logger.info("Filtering overlaps.")
     peaks_c1, peaks_c2, overlaps = fiter_overlaps(
-        peaks_c1, peaks_c2, overlap_df, threshold=args.fraction_overlap
+        peaks_c1, peaks_c2, overlap_df, threshold=fraction_overlap
     )
     logger.info("Peaks for c1: %d", len(peaks_c1))
     logger.info("Peaks for c2: %d", len(peaks_c2))
+    return peaks_c1, peaks_c2, overlaps
 
-    if args.out is None:
-        out_path, old_file = os.path.split(args.jobdata)
-    else:
-        out_path = args.out
-        try:
-            os.mkdir(out_path)
-        except FileExistsError:
-            pass
+
+def write_peaks(bed_c1, bed_c2, overlaps, out_path):
 
     out_base = os.path.join(out_path, "peaks_")
-    logger.info("Writing results to %s...", out_base)
-
-    bed_c1 = inlude_auc(name_peaks(peaks_c1))
-    bed_c2 = inlude_auc(name_peaks(peaks_c2))
 
     write_bed(
         bed_c1[["seqname", "start", "end", "name", "auc"]], out_base + "deconv_c1.bed"
@@ -733,10 +717,82 @@ def main():
     write_bed(bed_to_summit_bed(bed_c2), out_base + "deconv_c2.summits.bed")
 
     write_bed(
-        overlaps[["seqname", "start", "end", "name", "mean"]],
-        out_base + "overlap.bed",
+        overlaps[["seqname", "start", "end", "name", "mean"]], out_base + "overlap.bed",
+    )
+    return
+
+
+def main():
+    args = parse_args()
+    setup_logging(args.logLevel, args.logfile)
+    logger.debug("Loglevel is on DEBUG.")
+    cores = detect_cores(args.cores)
+    logger.info("Limiting computation to %i cores.", cores)
+    threadpool_limits(limits=int(cores))
+    os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
+
+    logger.info("Reading jobdata.")
+    workdata = read_job_data(args.jobdata)
+    work_coverage = estimated_deconvolved_fraction(workdata)
+    logger.info(f"At most {work_coverage:.2%} of the geome is deconvolved.")
+    logger.info("Reading deconvolution results.")
+    try:
+        map_results = read_results(
+            args.jobdata, workdata, progress=not args.no_progress, error=not args.force
+        )
+    except MissingData:
+        raise MissingData(
+            "Results are missing. Complete missing work chunks or pass --force to "
+            "call peaks regardless."
+        )
+
+    if not args.no_check:
+        check_length_distribution_flip(workdata, map_results)
+
+    if args.only_check:
+        return
+
+    logger.info("Processing deconvolved tracks.")
+    comb_data, signal_c1_list_global, signal_c2_list_global = interpolate(
+        workdata,
+        map_results,
+        args.c1_smooth,
+        args.c2_smooth,
+        args.span,
+        cores=cores,
+        progress=not args.no_progress,
     )
 
+    logger.info("Calling peaks.")
+    peaks_c1, peaks_c2, overlaps = call_peaks(
+        comb_data,
+        signal_c1_list_global,
+        signal_c2_list_global,
+        work_coverage=work_coverage,
+        fraction_in_peaks=args.fraction_in_peaks,
+        fraction_overlap=args.fraction_overlap,
+        uncorrected=args.uncorrected,
+        c1_min_peak_size=args.c1_min_peak_size,
+        c2_min_peak_size=args.c2_min_peak_size,
+        span=args.span,
+        cores=cores,
+        progress=not args.no_progress,
+    )
+
+    bed_c1 = inlude_auc(name_peaks(peaks_c1, "c1"))
+    bed_c2 = inlude_auc(name_peaks(peaks_c2, "c2"))
+
+    if args.out is None:
+        out_path, old_file = os.path.split(args.jobdata)
+    else:
+        out_path = args.out
+        try:
+            os.mkdir(out_path)
+        except FileExistsError:
+            pass
+
+    logger.info("Writing results to %s/...", out_path)
+    write_peaks(bed_c1, bed_c2, overlaps, out_path)
     logger.info("Finished sucesfully.")
 
 

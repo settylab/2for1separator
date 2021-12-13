@@ -6,12 +6,14 @@ import pickle
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
+from threadpoolctl import threadpool_limits
 import pyBigWig
 
-from dcbackend import logger, setup_logging
-from dcbackend import read_job_data, read_results, read_region_string
-from dcbackend import check_length_distribution_flip
-from dcbackend import MissingData
+from sep241util import logger, setup_logging
+from sep241util import read_job_data, read_results, read_region_string
+from sep241util import check_length_distribution_flip
+from sep241util import MissingData
+
 
 def parse_args():
     desc = "Prepair CUT&TAG 2for1 deconvolution."
@@ -29,6 +31,7 @@ def parse_args():
         https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/fetchChromSizes
         to fetch the file.
         """,
+        metavar="chrom-sizes-file",
         type=str,
     )
     parser.add_argument(
@@ -67,6 +70,11 @@ def parse_args():
         metavar="chr:start-end",
     )
     parser.add_argument(
+        "--exclude-flipped",
+        help="Exclude results from workchunks with flipped length distribution.",
+        action="store_true",
+    )
+    parser.add_argument(
         "--span",
         help="The span of base pairs with the same value in the ouptut bigwig (default=10).",
         type=int,
@@ -79,21 +87,12 @@ def parse_args():
         action="store_true",
     )
     parser.add_argument(
-        "--no-progress",
-        help="Do not show progress.",
-        action="store_true",
+        "--no-progress", help="Do not show progress.", action="store_true",
     )
     parser.add_argument(
         "--force",
         help="Make bigwigs even if some results are missing.",
         action="store_true",
-    )
-    parser.add_argument(
-        "--cores",
-        help="Number of CPUs to use for the preparation.",
-        type=int,
-        default=0,
-        metavar="int",
     )
     return parser.parse_args()
 
@@ -121,11 +120,7 @@ def generate_entry(
         interpolated_c1 = interpolated_c1.reshape(factor, span).mean(axis=1)
         interpolated_c2 = interpolated_c2.reshape(factor, span).mean(axis=1)
     bw_c1.addEntries(
-        seqname,
-        int(np.min(grid)),
-        span=span,
-        step=span,
-        values=interpolated_c1 * unit,
+        seqname, int(np.min(grid)), span=span, step=span, values=interpolated_c1 * unit,
     )
     bw_c2.addEntries(
         seqname, int(np.min(grid)), span=span, step=span, values=interpolated_c2 * unit
@@ -144,7 +139,9 @@ def make_bigwigs(
 ):
     if region:
         sel_seq, sel_start, sel_end = read_region_string(region, short_seqname=False)
-        all_seqs = [sel_seq, ]
+        all_seqs = [
+            sel_seq,
+        ]
     else:
         all_seqs = workdata["seqname"].unique()
     chrom_sizes = dict()
@@ -167,14 +164,14 @@ def make_bigwigs(
     signal_c2_list = list()
     location_list = list()
     last_name = ""
-    
+
     max_log_value = None
 
     for name, dat in tqdm(
-        workdata.iterrows(), total=len(workdata), desc="intervals", disable=~progress
+        workdata.iterrows(), total=len(workdata), desc="intervals", disable=not progress
     ):
         wg = dat["workchunk"]
-        maxlle = map_results.get(dat["workchunk"], None)
+        maxlle = map_results.get(wg, None)
         if maxlle is None:
             continue
         if f"f_c1_{name}" not in maxlle.keys():
@@ -187,11 +184,7 @@ def make_bigwigs(
 
         if region is not None:
             # consider skipping this interval
-            if(
-                (seq != sel_seq)
-                or (dat["end"] < sel_start)
-                or (dat["start"] > sel_end)
-            ):
+            if (seq != sel_seq) or (dat["end"] < sel_start) or (dat["start"] > sel_end):
                 continue
 
         locations = dat["cuts"]["location"][start_idx:end_idx].values.astype(int)
@@ -255,12 +248,13 @@ def make_bigwigs(
 def main():
     args = parse_args()
     setup_logging(args.logLevel, args.logfile)
-
     logger.info("Reading jobdata.")
     workdata = read_job_data(args.jobdata)
     logger.info("Reading deconvolution results.")
     try:
-        map_results = read_results(args.jobdata, workdata, progress=~args.no_progress, error=~args.force)
+        map_results = read_results(
+            args.jobdata, workdata, progress=not args.no_progress, error=not args.force
+        )
     except MissingData:
         raise MissingData(
             "Results are missing. Complete missing work chunks or pass --force to "
@@ -268,8 +262,11 @@ def main():
         )
 
     if not args.no_check:
-        logger.info("Checking length distribution flip.")
-        check_length_distribution_flip(workdata, map_results)
+        bad_wgs = check_length_distribution_flip(workdata, map_results)
+        if args.exclude_flipped:
+            logger.info("Removing flipped workgroups from results.")
+            for idx in bad_wgs:
+                del map_results[idx]
 
     if args.out is None:
         out_path, old_file = os.path.split(args.jobdata)
@@ -285,7 +282,7 @@ def main():
         span=args.span,
         unit=args.unit,
         region=args.region,
-        progress=~args.no_progress,
+        progress=not args.no_progress,
     )
     logger.info("Finished sucesfully.")
 

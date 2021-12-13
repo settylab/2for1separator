@@ -22,6 +22,7 @@ logger = logging.getLogger("2for1seperator")
 
 
 def setup_logging(level, logfile=None):
+    logging.getLogger("filelock").setLevel(logging.ERROR)
     logger.propagate = False
     logging.basicConfig(
         format="[%(asctime)s] [%(levelname)-8s] %(message)s",
@@ -37,6 +38,46 @@ def setup_logging(level, logfile=None):
         fh.setFormatter(formatter)
         logger.addHandler(fh)
     logger.addHandler(ch)
+
+
+def setFlag(flag, value=None):
+    """
+    Description
+    -----------
+    Sets or overites the theano `flag` in the envirnment variable 'THEANO_FLAGS'.
+
+    Parameter
+    ---------
+    flag : The flag name that is to be overwritten or set.
+    value : The value to be asigned to the flag. If it is
+    `None` then `flag` will be pasted as is into 'THEANO_FLAGS'.
+
+    Value
+    -----
+    The new value of 'THEANO_FLAGS'.
+    """
+    if not isinstance(flag, str):
+        raise TypeError("The arrgument `flag` needs to be a string.")
+    if "THEANO_FLAGS" in os.environ:
+        flagString = os.getenv("THEANO_FLAGS")
+    else:
+        flagString = ""
+
+    if value is None:
+        newFlagString = flagString + "," + flag
+        os.environ["THEANO_FLAGS"] = newFlagString
+        return newFlagString
+
+    if not isinstance(value, str):
+        raise TypeError("The arrgument `value` needs to be a string or `None`.")
+
+    oldFlags = flagString.split(",")
+    flagTag = flag + "="
+    newFlags = [s for s in oldFlags if flagTag not in s]
+    newFlags.append(flagTag + value)
+    newFlagString = ",".join(newFlags)
+    os.environ["THEANO_FLAGS"] = newFlagString
+    return newFlagString
 
 
 if __name__ == "__main__":
@@ -165,58 +206,15 @@ if __name__ == "__main__":
     setup_logging(args.logLevel, args.logfile)
     logger.info("Running whole_genome_deconvolve_job with arguments:")
     logger.info(args)
-    logging.getLogger("filelock").setLevel(logging.ERROR)  # theano/asrea prints a lot
 
-
-def setFlag(flag, value=None):
-    """
-    Description
-    -----------
-    Sets or overites the theano `flag` in the envirnment variable 'THEANO_FLAGS'.
-
-    Parameter
-    ---------
-    flag : The flag name that is to be overwritten or set.
-    value : The value to be asigned to the flag. If it is
-    `None` then `flag` will be pasted as is into 'THEANO_FLAGS'.
-
-    Value
-    -----
-    The new value of 'THEANO_FLAGS'.
-    """
-    if not isinstance(flag, str):
-        raise TypeError("The arrgument `flag` needs to be a string.")
-    if "THEANO_FLAGS" in os.environ:
-        flagString = os.getenv("THEANO_FLAGS")
+    tmpdir = os.getenv("TMPDIR")
+    if args.compiledir is not None:
+        compileDir = args.compiledir
+    elif tmpdir is None:
+        compileDir = "./sep241tmp"
     else:
-        flagString = ""
-
-    if value is None:
-        newFlagString = flagString + "," + flag
-        os.environ["THEANO_FLAGS"] = newFlagString
-        return newFlagString
-
-    if not isinstance(value, str):
-        raise TypeError("The arrgument `value` needs to be a string or `None`.")
-
-    oldFlags = flagString.split(",")
-    flagTag = flag + "="
-    newFlags = [s for s in oldFlags if flagTag not in s]
-    newFlags.append(flagTag + value)
-    newFlagString = ",".join(newFlags)
-    os.environ["THEANO_FLAGS"] = newFlagString
-    return newFlagString
-
-
-tmpdir = os.getenv("TMPDIR")
-if args.compiledir is not None:
-    compileDir = args.compiledir
-elif tmpdir is None:
-    compileDir = "./sep241tmp"
-else:
-    compileDir = os.path.join(tmpdir, "sep241tmp")
-setFlag("base_compiledir", compileDir)
-# setFlag("blas.ldflags", "'-L/usr/lib/ -lblas'")
+        compileDir = os.path.join(tmpdir, "sep241tmp")
+    setFlag("base_compiledir", compileDir)
 
 import theano
 
@@ -244,9 +242,9 @@ def get_cov_functions(c1_cov_string, c2_cov_string):
     c1_code = p.sub(r"pm.gp.cov.\g<1>1, ", c1_cov_string)
     c2_code = p.sub(r"pm.gp.cov.\g<1>1, ", c2_cov_string)
     covs_wo_input_dims = {
-        'WhiteNoise(': r'WhiteNoise\(1, ',
-        'Constant(': r'Constant\(1, ',
-        'Kron(': r'Kron\(1, ',
+        "WhiteNoise(": r"WhiteNoise\(1, ",
+        "Constant(": r"Constant\(1, ",
+        "Kron(": r"Kron\(1, ",
     }
     for repl, pattern in covs_wo_input_dims.items():
         c1_code = re.sub(pattern, repl, c1_code)
@@ -276,6 +274,7 @@ def get_length_dist_modes(modes=[70, 200, 400, 600], sigmas=[0.29, 0.18, 0.15, 0
             mode = pm.Lognormal.dist(mus[i], sigma=sigmas[i], testval=modes[i])
             length_comps.append(mode)
         return length_comps
+
     return generator
 
 
@@ -301,7 +300,12 @@ def format_cuts(locations_ds):
 
 
 def make_model(
-    events, cov_functions, dirichlet_priors, length_comps_gen, mlevel=0, constraint=False
+    events,
+    cov_functions,
+    dirichlet_priors,
+    length_comps_gen,
+    mlevel=0,
+    constraint=False,
 ):
     logger.info("Compiling model.")
     with pm.Model() as model:
@@ -339,17 +343,20 @@ def make_model(
             length_diff = means.dot(larger_weights) - means.dot(smaller_weights)
             const = pm.Potential(
                 "length_mode_constraint",
-                pm.math.switch(length_diff > 0, 0, -length_diff * 1e5),
+                pm.math.switch(length_diff > 0, 0, -length_diff * 1e99),
             )
 
-        for name, dat in events.iterrows():
+        n_intervals = len(events)
+        for i, (name, dat) in enumerate(events.iterrows()):
 
             unique_locations, log_loc_weight, interleave_index = format_cuts(
                 dat["cuts"]["location"]
             )
             lengths = dat["cuts"]["length"].values
             logger.info(
-                "Compiling intervall %s with %i cuts in %i locations.",
+                "Compiling intervall (%d/%d) %s with %i cuts in %i locations.",
+                i+1,
+                n_intervals,
                 name,
                 len(dat["cuts"]),
                 len(unique_locations),

@@ -18,19 +18,31 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 import sklearn.gaussian_process.kernels as kernels
 from sklearn.linear_model import LinearRegression
 from scipy.stats import lognorm
+import multiprocessing
 
 from KDEpy import FFTKDE
 
 from gtfparse import read_gtf
 
+
 class NoData(Exception):
     pass
+
 
 class MissingData(Exception):
     pass
 
+
+class BEDFormatError(Exception):
+    pass
+
+
 class NotARegion(Exception):
     pass
+
+class BarcodeError(Exception):
+    pass
+
 
 logger = logging.getLogger("2for1seperator")
 
@@ -52,11 +64,27 @@ def setup_logging(level, logfile=None):
         logger.addHandler(fh)
     logger.addHandler(ch)
 
-def read_region_string(feature, short_seqname=True, format_string=r"([^:]+):([0-9,_]+)-([0-9,_]+)"):
+
+def write_bed(bed_df, out_path):
+    bed_df.to_csv(out_path, sep="\t", header=False, index=False)
+
+
+def detect_cores(cores=None):
+    if not cores:
+        cores = multiprocessing.cpu_count()
+        logger.info("Detecting %s compute cores.", cores)
+    return cores
+
+
+def read_region_string(
+    feature, short_seqname=True, format_string=r"([^:]+):([0-9,_]+)-([0-9,_]+)"
+):
     region_format = re.compile(format_string)
     is_region = region_format.match(feature)
     if not is_region:
-        raise NotARegion(f'The passed feature `{feature}` does not match region the forman seqname:start-end.')
+        raise NotARegion(
+            f"The passed feature `{feature}` does not match region the forman seqname:start-end."
+        )
     seq, start, end = is_region.groups()
     start = int(re.sub("[^0-9]", "", start))
     end = int(re.sub("[^0-9]", "", end))
@@ -111,28 +139,35 @@ def posterior_length_dists(
         w_c1 = args.c1_dirichlet_prior
         y = length_dist(w_c1 / np.sum(w_c1))
         prior_df = pd.DataFrame(
-            {
-                "density": y,
-                "length": x,
-                "from": "Prior c1",
-                "workchunk": "none",
-            }
+            {"density": y, "length": x, "from": "Prior c1", "workchunk": "none",}
         )
         df_list.append(prior_df)
         w_c2 = args.c2_dirichlet_prior
         y = length_dist(w_c2 / np.sum(w_c2))
         prior_df = pd.DataFrame(
-            {
-                "density": y,
-                "length": x,
-                "from": "Prior c2",
-                "workchunk": "none",
-            }
+            {"density": y, "length": x, "from": "Prior c2", "workchunk": "none",}
         )
         df_list.append(prior_df)
     result_df = pd.concat(df_list)
     result_df["group"] = result_df["from"] + result_df["workchunk"]
     return result_df
+
+
+def posterior_mode_weights(workdata, map_results):
+    w_c1_posterior = w_c2_posterior = False
+    for name, dat in workdata.iterrows():
+        wg = dat["workchunk"]
+        if wg not in map_results:
+            continue
+        n_cuts = len(dat["cuts"])
+        w_c1_inferred = map_results[wg]["weight_c1"]
+        w_c2_inferred = map_results[wg]["weight_c2"]
+        if w_c1_posterior is False:
+            w_c1_posterior = np.zeros(len(w_c1_inferred))
+            w_c2_posterior = np.zeros(len(w_c2_inferred))
+        w_c1_posterior += n_cuts * w_c1_inferred
+        w_c2_posterior += n_cuts * w_c2_inferred
+    return w_c1_posterior, w_c2_posterior
 
 
 def check_length_distribution_flip(workdata, map_results, threshold=0.9):
@@ -155,24 +190,11 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
     usual_diff = diffs.median(axis=1)
     diff_coors = diffs.corrwith(usual_diff)
     idx_flipped = diff_coors < threshold
-    bad_wgs = set(idx_flipped.index[idx_flipped])
-
-    w_c1_posterior = w_c2_posterior = False
-    for name, dat in workdata.iterrows():
-        wg = dat["workchunk"]
-        if wg in bad_wgs or wg not in map_results:
-            continue
-        n_cuts = len(dat["cuts"])
-        w_c1_inferred = map_results[wg]["weight_c1"]
-        w_c2_inferred = map_results[wg]["weight_c2"]
-        if w_c1_posterior is False:
-            w_c1_posterior = np.zeros(len(w_c1_inferred))
-            w_c2_posterior = np.zeros(len(w_c2_inferred))
-        w_c1_posterior += n_cuts * w_c1_inferred
-        w_c2_posterior += n_cuts * w_c2_inferred
+    bad_wgs = set(idx_flipped.index[idx_flipped].astype(int))
 
     if any(idx_flipped):
-        wg_string = ",".join([str(wg) for wg in bad_wgs])
+        w_c1_posterior, w_c2_posterior = posterior_mode_weights(workdata, map_results)
+        wg_string = to_grouped_string(bad_wgs)
         post_str_c1 = " ".join([str(int(w)) for w in w_c1_posterior])
         post_str_c2 = " ".join([str(int(w)) for w in w_c2_posterior])
         logger.warn(
@@ -190,15 +212,40 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
                     --c2-dirichlet-prior %s \\
                     [additional parameters]
                 """,
-            wg_string, post_str_c1, post_str_c2,
-            wg_string, post_str_c1, post_str_c2,
+            wg_string,
+            post_str_c1,
+            post_str_c2,
+            wg_string,
+            post_str_c1,
+            post_str_c2,
         )
     else:
         logger.info("No flipped length distributions found.")
+    return bad_wgs
 
 
 def read_job_data(jobdata_file):
     return pd.read_pickle(jobdata_file)
+
+def to_grouped_string(list_of_integers):
+    grouped_str = ""
+    last_m = -np.inf
+    in_group = False
+    for m in sorted(list_of_integers):
+        if m == last_m+1:
+            in_group = True
+        else:
+            if in_group:
+                # close of last group
+                grouped_str += f"-{last_m}"
+                in_group = False
+            grouped_str += f",{m}"
+        last_m = m
+    if in_group:
+        grouped_str += f"-{last_m}"
+    grouped_str = grouped_str[1:] # remove leading ,
+    return grouped_str
+
 
 def read_results(jobdata_file, workdata, progress=True, error=True):
     map_results = dict()
@@ -213,14 +260,18 @@ def read_results(jobdata_file, workdata, progress=True, error=True):
                 map_results[workchunk] = pickle.load(fl)
             last_wg_data = map_results[workchunk]
         except FileNotFoundError:
-            misses.append(str(workchunk))
+            misses.append(workchunk)
     if last_wg_data is None:
         raise NoData("No deconvolution results found.")
     if misses:
-        miss_str = ",".join(misses)
-        logger.warn("Results of the following work chunks are missing: %s", miss_str)
+        total_wc = len(workdata["workchunk"].unique())
+        miss_str = to_grouped_string(misses)
+        logger.warn("Results for the following %s of %s work chunks are missing: %s",
+                    f'{len(misses):,}', f'{total_wc:,}', miss_str)
         if error:
-            raise MissingData(f"Results of the following work chunks are missing: {miss_str}")
+            raise MissingData(
+                f"Results for the following {len(misses):,} of {total_wc:,} work chunks are missing: {miss_str}"
+            )
     return map_results
 
 
@@ -394,18 +445,13 @@ def igv_plot(
     ):
         # use familiar coloring
         (breaks, values) = zip(*known_celltypes.items())
-        pl = pl + p9.scale_fill_manual(
-            breaks=breaks,
-            values=values,
-        )
+        pl = pl + p9.scale_fill_manual(breaks=breaks, values=values,)
     else:
         pl = pl + p9.scale_fill_hue()
 
     if group is not None:
         pl += p9.facet_grid(
-            f"{group} ~ .",
-            scales=facet_scales,
-            labeller=p9.labeller(relabeling),
+            f"{group} ~ .", scales=facet_scales, labeller=p9.labeller(relabeling),
         )
     if is_density:
         pl += p9.labs(y="cuts/hbp")
@@ -639,22 +685,22 @@ def plot_gtf(
     return pl
 
 
-class Deconvoluter:
+class DataManager:
     """
     A utility class for sep241 deconvolution.
     """
 
     def __init__(
-        self,
-        fragments_files=dict(),
-        gtf_file=None,
-        show_progress=True,
+        self, fragments_files=dict(), gtf_file=None, show_progress=True, comment="#",
+        remove_pcr_duplicates = True,
     ):
         self.gtf_file = gtf_file
         self.fragments_files = fragments_files
         self.max_smooth_igv_resolution = 1000
         self._cache = dict()
         self.show_progress = show_progress
+        self.comment = "#"
+        self.remove_pcr_duplicates = remove_pcr_duplicates
 
     def plot_frag_length(self, log_scale=True):
         alen = self.all_fragments()
@@ -677,12 +723,7 @@ class Deconvoluter:
         if points:
             ad = self.rna_ad
             idx = ad.obs["selected"]
-            df = pd.DataFrame(
-                {
-                    x: ad.obs[x][idx],
-                },
-                index=ad.obs_names[idx],
-            )
+            df = pd.DataFrame({x: ad.obs[x][idx],}, index=ad.obs_names[idx],)
             for gene in genes:
                 df[gene] = ad.layers["MAGIC_imputed_data"][idx, ad.var_names == gene]
             pdf = df.melt(id_vars=[x], var_name="gene", value_name="expression")
@@ -750,14 +791,15 @@ class Deconvoluter:
         include_events=True,
         nuc_size=120,
         _return_bounds=False,
+        with_name=False,
     ):
         seq, start, end = self._interpret_feature(feature)
-        if seq.isdigit() or seq in ["X", "Y", "M"]:
+        if not seq.startswith("chr"):
             seq = f"chr{seq}"
         lower_bound = start - max_dist
         upper_bound = end + max_dist
         region = "%s:%d-%d" % (seq, lower_bound, upper_bound)
-        atac_intervals = self.get_intervals(region, nuc_size=nuc_size)
+        atac_intervals = self.get_intervals(region, nuc_size=nuc_size, with_name=with_name)
         atac_intervals["seqname"] = seq
         if not include_events:
             return atac_intervals
@@ -813,10 +855,7 @@ class Deconvoluter:
         """
         if isinstance(feature, str):
             intervals, events, lower_bound, upper_bound = self.get_fragments(
-                feature,
-                max_dist=max_dist,
-                nuc_size=nuc_size,
-                _return_bounds=True,
+                feature, max_dist=max_dist, nuc_size=nuc_size, _return_bounds=True,
             )
         else:
             events = feature
@@ -845,7 +884,7 @@ class Deconvoluter:
                 events,
                 obs,
                 suffixes=("", obs_from),
-                left_on="barcode",
+                left_on="name",
                 right_index=True,
                 how="left",
             )
@@ -984,10 +1023,12 @@ class Deconvoluter:
     file_length = {}
 
     def _all_of_file(self, file, rep):
+        comment = self.comment
         h = (
             ("f", "_all_of_file"),
             ("file", file),
             ("rep", rep),
+            ("comment", comment),
         )
         if (result := self._cache.get(h)) is not None:
             return result
@@ -1008,38 +1049,79 @@ class Deconvoluter:
                     buff,
                     desc="reads",
                     total=self.file_length[absfile],
-                    disable=~self.show_progress,
+                    disable=not self.show_progress,
                 )
             else:
-                lines = tqdm(buff, desc="reads", disable=~self.show_progress)
-            for line in lines:
-                seq, s, e = line.decode().split("\t")[:3]
-                start = int(s)
-                end = int(e)
-                reads.append((rep, seq, start, end))
+                lines = tqdm(buff, desc="reads", disable=not self.show_progress)
+            n_fileds = None
+            en_lines = enumerate(lines)
+            for i, line in enumerate(lines):
+                if n_fileds is None:
+                    if not line.decode().strip().startswith(comment):
+                        n_fileds = min(4, len(line.decode().split("\t")))
+                        logger.debug("Using %d columns of %s.", n_fileds, file)
+                if n_fileds == 3:
+                    seq, s, e = line.decode().split("\t")[:3]
+                    start = int(s)
+                    end = int(e)
+                    reads.append((rep, seq, start, end, f"read-{i}"))
+                elif n_fileds == 4:
+                    seq, s, e, bc = line.decode().split("\t")[:4]
+                    start = int(s)
+                    end = int(e)
+                    reads.append((rep, seq, start, end, bc))
+                elif line.decode().strip().startswith(comment):
+                    continue
+                else:
+                    logger.error("Line %d of %s: %s", i, file, line)
+                    raise BEDFormatError(f"Less than 3 columns in bed file {file}.")
         self._cache[h] = reads
         return reads
 
-    def all_fragments(self):
+    def all_fragments(self, barcode=None):
         reads = list()
         all_lengths = list()
         for rep, file in self.fragments_files.items():
             logger.info(f"Reading sample {rep}")
             reads += self._all_of_file(file, rep)
         logger.info("Making data frame.")
-        result_df = pd.DataFrame(reads, columns=["from", "seqname", "start", "end"])
-        logger.info("Calculating read lengths.")
+        result_df = pd.DataFrame(
+            reads, columns=["from", "seqname", "start", "end", "name"]
+        )
+        if barcode:
+            if barcode not in ["from", "name"]:
+                raise BarcodeError("Barcode '%s' must be 'from' or 'name'.", barcode)
+            result_df["barcode"] = result_df[barcode]
+        total_reads = len(result_df)
+        if self.remove_pcr_duplicates:
+            if "barcode" in result_df.columns:
+                result_df = result_df.drop_duplicates(subset=["barcode", "seqname", "start", "end"])
+            else:
+                result_df = result_df.drop_duplicates()
+            n_removed = total_reads - len(result_df)
+            faction = n_removed / total_reads
+            logger.info(f"Removed {n_removed:,} of {total_reads:,} ({faction:.2%}) duplicate reads.")
+            total_reads = len(result_df)
+        result_df["start"] = result_df["start"].astype(int)
+        result_df["end"] = result_df["end"].astype(int)
+        logger.info(f"Calculating read lengths for all {total_reads:,} reads.")
         result_df["length"] = result_df["end"] - result_df["start"]
         return result_df
 
-    def get_intervals(self, region, nuc_size=120):
+    def get_intervals(self, region, nuc_size=120, with_name=False):
         intervals = list()
         for rep, fragments_file in self.fragments_files.items():
             tb = tabix.open(fragments_file)
             records = tb.querys(region)
             for record in records:
-                intervals.append((rep, record[0], int(record[1]), int(record[2])))
-        intervals_df = pd.DataFrame(intervals, columns=["from", "seq", "start", "end"])
+                if with_name:
+                    intervals.append((rep, record[0], int(record[1]), int(record[2]), record[3]))
+                else:
+                    intervals.append((rep, record[0], int(record[1]), int(record[2])))
+        if with_name:
+            intervals_df = pd.DataFrame(intervals, columns=["from", "seq", "start", "end", "barcode"])
+        else:
+            intervals_df = pd.DataFrame(intervals, columns=["from", "seq", "start", "end"])
         intervals_df["length"] = np.abs(intervals_df["end"] - intervals_df["start"])
         intervals_df["read_type"] = np.where(
             intervals_df["length"] > nuc_size, f">{nuc_size}", f"≤{nuc_size}"

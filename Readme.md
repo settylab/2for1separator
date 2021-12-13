@@ -35,6 +35,8 @@ It is recommended to use approximatly `300` GB or more for `--memory`.
 
 The ouptut of the function reports the number of seperate work chunks
 and suggests subsequent calls for the deconvolution.
+The number of slurm jobs is also stored in an additional output file named
+with `[jobdata pkl file].njobs`.
 Note that if memory resources are exhausted, deconvolution jobs
 may be cancled by slurm or the operating system and subsequent
 results will be missing. The downstream scripts will look for missing
@@ -42,6 +44,15 @@ results and report a comma sperated list of respective work chunk
 numbers. If you are using slurm you can rerun the slurm jobs of only
 the specified jobs by passing the list with the `--array=` parameter
 of the `sbatch` command.
+
+### Exporting Results
+
+If not specified otherwise through the `--out` argument, all outputs are placed
+into the same directory with the `[jobdata pkl file]`. Most outputs contain
+`c1` or `c2` in their file name, which stand for _channel 1_ or _channel 2_,
+and represent the two constituent parts of the data that were
+induced by the two different targets and that were
+reconstructed through the deconvolution.
 
 To produce bigwig files from the deconvolution results run
 ```
@@ -59,6 +70,11 @@ with overlap idendification run:
 ```
 Note, that `sep241peakcalling.py` does not required the prior conversion
 to bigWIG but instead uses the raw deconvolution output.
+
+To write out the target specific likelihoods of each cut you can run
+```
+./sep241events.py [jobdata pkl file]
+```
 
 For more information pass `--help` to the respective script.
 
