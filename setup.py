@@ -1,14 +1,14 @@
 from setuptools import setup
 
 setup(
-    name='2for1separator',
+    name='sep241',
     version='1.0.0',
     description='Deconvolve CUT&Tag 2for1 data.',
     url='https://github.com/settylab/2for1separator',
     author='Dominik Otto, Brennan Dury',
     author_email='dotto@fredhutch.org, brennandury@gmail.com',
     license='GNU General Public License v3.0',
-    packages=['2for1separator'],
+    packages=['sep241'],
     install_requires=['numpy==1.21.5',
                       'pandas==1.2.5',
                       'scipy==1.6.3',
