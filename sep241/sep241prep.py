@@ -12,9 +12,266 @@ import pandas as pd
 from tqdm.auto import tqdm
 from KDEpy import FFTKDE
 import multiprocessing
+import tempfile
 
-from sep241util import DataManager, LevelSet
-from sep241util import logger, setup_logging
+from sep241util import DataManager, logger, setup_logging, set_flag, format_cuts
+
+
+desc = """Prepare CUT&TAG 2for1 deconvolution. The input sequencing reads should
+be supplied in
+`bed format <http://uswest.ensembl.org/info/website/upload/bed.html>`_.
+
+We exclude genomic regions with low event density based on a gaussian kernel
+density estimation. This can be controlled withe the ``--kde-bw`` and
+``--kde-threshold`` arguments.
+
+To remain within memory bounds and numeric feasibility, the data is
+split up into small intervals that are grouped into subsets that will be
+deconvolved in separate *workchunks*. The resulting data is written to a
+pickle file specified with ``--out`` and will be the input of the deconvolution.
+
+Workgroups are each processed by a different instance of the deconvolution step.
+The total memory cost of each workchunk is controlled by targeting
+the memory demand specified with ``--memory-target``. Note that this script only
+estimates the memory and the actual memory demand may be significantly different
+from the target. In this case, consider adjusting ``--memory-target`` and running the
+preparation again.
+
+Note that this script uses covariance functions to better estimate
+the memory demand of the deconvolution step. If you want to use a covariance function
+or covariance function parameters other than the default, and the accuracy of the
+memory estimation is important, it is advisable to specify the covariance function
+and parameters in the preparation step with the ``--c1-cov-for-memory-estimation``,
+``--c2-cov-for-memory-estimation``, and ``--sparsity-threshold-for-memory-estimation``
+parameters.
+
+Intervals within different workchunk are deconvolved independently. It is
+therefore helpful that each workchunk contains a representative subset of
+intervals to infer the correct global fragment length distributions.
+If the inference fails and a workchunk produces fragment length distributions
+that significantly differ from the global average, 2for1separator will request
+to rerun it with a updated prior. To avoid excessive reruns we advise that
+that workchunks should each have at least 20 intervals.
+Generally, this should occur by
+default, but in the case that workchunks have too few intervals, consider
+decreasing ``--max-locs`` and ``--max-cuts`` which will lead to finer
+subdivisions of the used intervals.
+"""
+
+parser = argparse.ArgumentParser(description=desc)
+parser.add_argument(
+    "fragment_files",
+    metavar="fragment-file.bed.gz",
+    type=str,
+    nargs="+",
+    help="""Input
+        `bed files <http://uswest.ensembl.org/info/website/upload/bed.html>`_.
+        If ``--bc-from-file`` is set, the fourth column should contain the cell
+        barcodes. Bed files can be compressed using gzip (``*.gz``) or
+        bzip2 (``*.gz2``).""",
+)
+parser.add_argument(
+    "-l",
+    "--log",
+    dest="logLevel",
+    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    default="INFO",
+    help="Set the logging level (default=INFO).",
+    metavar="LEVEL",
+)
+parser.add_argument(
+    "--logfile",
+    help="Write detailed log to this file.",
+    type=str,
+    metavar="logfile",
+)
+parser.add_argument(
+    "-o",
+    "--out",
+    help="Output file path (default=work_chunks.pandas_pkl).",
+    default="work_chunks.pandas_pkl",
+    type=str,
+    metavar="dir",
+)
+parser.add_argument(
+    "--barcode",
+    help="""Specify a regular expression to extract cell barcodes.
+    E.g. 'file_([ACGT]*).bed' will extract 'ACCGGC' from 'something_file_ACCGGC_other'.
+    Alternatively, pass 'from_bed' to use the fourth column of the bed-file as barcode.
+    If set to empty '', no barcode is saved. (default='(.*)')
+    """,
+    type=str,
+    default="(.*)",
+    metavar="pattern",
+)
+parser.add_argument(
+    "--bc-from-file",
+    help="Extract barcode from file name instead of using the fourth column of the bed file(s).",
+    action="store_true",
+)
+parser.add_argument(
+    "--omit-seqname-postfix",
+    help="For the sequence name omit everything behind the first '_'.",
+    action="store_true",
+)
+parser.add_argument(
+    "--keep-duplicates",
+    help="Do not remove identical reads (PCR duplicates).",
+    action="store_true",
+)
+parser.add_argument(
+    "--seed",
+    help="Random state seed to assign intervals to workchunks (default=242567).",
+    type=int,
+    default=242567,
+    metavar="int",
+)
+parser.add_argument(
+    "--kde-bw",
+    help="Bandwidth (sigma) for kernel density estimate (KDE) used for interval selection (default=200).",
+    type=float,
+    default=200,
+    metavar="float",
+)
+parser.add_argument(
+    "--kde-threshold",
+    help="Minimum KDE value to consider genomic section for deconvolution (default=2).",
+    type=float,
+    default=2,
+    metavar="float",
+)
+parser.add_argument(
+    "--selection-padding",
+    help="Additional padding around genomic section selected based on KDE (default=10,000).",
+    type=int,
+    default=10_000,
+    metavar="int",
+)
+parser.add_argument(
+    "--selection-bed",
+    help="Alternatively to KDE selection, specify bed file of regions to deconvolve.",
+    type=str,
+    default=None,
+    metavar="str",
+)
+parser.add_argument(
+    "--region-padding",
+    help="Additional padding around intervals even if specified through bed file (default=5,000).",
+    type=int,
+    default=5_000,
+    metavar="int",
+)
+parser.add_argument(
+    "--interval-overlap",
+    help="Overlap to neighboring subdivides and minimal exclusive section size (default=10,000).",
+    type=int,
+    default=10_000,
+    metavar="int",
+)
+parser.add_argument(
+    "--max-locs",
+    help="Maximum of unique cuts per interval. Memory demand may increase proportionally (default=10,000,000).",
+    type=int,
+    default=10_000_000,
+    metavar="int",
+)
+parser.add_argument(
+    "--max-cuts",
+    help="Maximum of cuts per interval. Memory demand may increase proportionally (default=15,000,000).",
+    type=int,
+    default=15_000_000,
+    metavar="int",
+)
+parser.add_argument(
+    "--memory-target",
+    help="Memory demand target in GBs for individual workchunks (default=20).",
+    type=float,
+    default=20,
+    metavar="float",
+)
+parser.add_argument(
+    "--c1-cov",
+    "--c1-cov-for-memory-estimation",
+    help="""Covariance function of component 1 for the
+    deconvolution step using pymc covariance functions
+    without the `input_dim` argument:
+    https://docs.pymc.io/api/gp/cov.html
+    In the preparation step, this is only used for a
+    more accurate estimation of the memory demand of the
+    deconvolution step and the assignment of intervals
+    into workchunks based on the memory estimations.
+    (default=Matern32(500))
+    """,
+    type=str,
+    default="Matern32(500)",
+    metavar="'a*CovFunc(args) + ...'",
+)
+parser.add_argument(
+    "--c2-cov",
+    "--c2-cov-for-memory-estimation",
+    help="""Covariance function of component 2 for the
+    deconvolution step using pymc covariance functions
+    without the `input_dim` argument:
+    https://docs.pymc.io/api/gp/cov.html
+    In the preparation step, this is only used for a
+    more accurate estimation of the memory demand of the
+    deconvolution step and the assignment of intervals
+    into workchunks based on the memory estimations.
+    (default=Matern32(2000))
+    """,
+    type=str,
+    default="Matern32(2000)",
+    metavar="'a*CovFunc(args) + ...'",
+)
+parser.add_argument(
+    "--sparsity-threshold",
+    "--sparsity-threshold-for-memory-estimation",
+    help="""In the deconvolution step, do not calculate
+    covariances that will be below this threshold.
+    In the preparation step, this is only used for a
+    more accurate estimation of the memory demand of the
+    deconvolution step and the assignment of intervals
+    into workchunks based on the memory estimations.
+    (default=1e-8)""",
+    type=float,
+    default=1e-8,
+    metavar="float",
+)
+parser.add_argument(
+    "--blacklist",
+    help="Bed file of genomic regions to exclude from the deconvolution.",
+    type=str,
+    default=None,
+    metavar="file.bed.gz2",
+)
+parser.add_argument(
+    "--blacklisted-seqs",
+    help="Sequences to exclude from the deconvolution (default=chrM chrUn chrEBV).",
+    type=str,
+    default=["chrM", "chrUn", "chrEBV"],
+    nargs="+",
+    metavar="chrN",
+)
+parser.add_argument(
+    "--no-progress",
+    help="Do not show progress.",
+    action="store_true",
+)
+parser.add_argument(
+    "--cores",
+    help="Number of CPUs to use for the preparation.",
+    type=int,
+    default=0,
+    metavar="int",
+)
+parser.add_argument(
+    "--compiledir",
+    help="""Directory to compile code in. Can be deleted after run. Enter a directory
+    path, e.g. './sep241tmp/{args.out}/prep' to keep the compiled code saved in that directory.
+    By default, creates a temporary directory.""",
+    type=str,
+    metavar="dir",
+)
 
 
 class RegionTooSmall(Exception):
@@ -29,9 +286,7 @@ class SubdivisionError(Exception):
     pass
 
 
-def filter_sort_events(
-    events, blacklist=None, blacklisted_sequences=set(), progress=True
-):
+def filter_sort_events(events, blacklist=None, blacklisted_sequences=set(), progress=True):
     grouped = events.groupby("seqname")
     if blacklist:
         tb = tabix.open(blacklist)
@@ -110,9 +365,7 @@ def full_kde_grid(x, xmin=None, xmax=None):
     return grid
 
 
-def get_kde(
-    cut_locations, kde_bw=500, kernel="gaussian", xmin=None, xmax=None, grid=None
-):
+def get_kde(cut_locations, kde_bw=500, kernel="gaussian", xmin=None, xmax=None, grid=None):
     if grid is None:
         grid = full_kde_grid(cut_locations, xmin, xmax)
     kernel = FFTKDE(kernel=kernel, bw=kde_bw)
@@ -122,7 +375,7 @@ def get_kde(
 
 
 def get_intervals(boolean_selection, region_padding):
-    """Convert boolean selection of a seqence with additional padding into
+    """Convert boolean selection of a sequence with additional padding into
     a vector of interval starts and ends."""
     data_count = boolean_selection.cumsum()
     gains = np.zeros(data_count.shape, dtype=int)
@@ -146,7 +399,7 @@ def get_intervals(boolean_selection, region_padding):
     ends = np.where(start_end == -1)[0]
     if len(starts) != 0:
         if ends[-1] == len(start_end):
-            # last position is outside of grid and musst be avoided
+            # last position is outside of grid and must be avoided
             ends[-1] -= 1
         interval_sizes = ends - starts
 
@@ -187,10 +440,10 @@ def subdivide(
     start,
     end,
     region_padding,
-    max_cuts_per_intervall,
-    max_locations_per_intervall,
+    max_cuts_per_interval,
+    max_locations_per_interval,
 ):
-    """Subdevides cuts into overlapping regions. Cuts musst be sorted."""
+    """Subdivides cuts into overlapping regions. Cuts must be sorted."""
     lcuts = events["location"].values
     region_size = end - start
     if region_size <= 2 * region_padding:
@@ -245,8 +498,8 @@ def subdivide(
         exclusive_region = stich_end[1] - stich_start[1]
         if (
             (
-                len(sel_cuts) >= (max_cuts_per_intervall / 2)
-                or n_locs >= max_locations_per_intervall
+                len(sel_cuts) >= (max_cuts_per_interval / 2)
+                or n_locs >= max_locations_per_interval
             )  # max work
             and exclusive_region >= region_padding  # min region
             and k != len(lcuts[i:])  # not the last cut
@@ -257,20 +510,20 @@ def subdivide(
             ends.append(c)
             stich_ends.append(stich_end.copy())
             cuts.append(events.iloc[sel_cuts, :].copy())
-            if len(sel_cuts) > max_cuts_per_intervall:
-                perc = len(sel_cuts) / max_cuts_per_intervall
+            if len(sel_cuts) > max_cuts_per_interval:
+                perc = len(sel_cuts) / max_cuts_per_interval
                 warnings.warn(
                     f"Subdivide {len(starts)} has {perc:.2%} of the selected maximum "
-                    "of cuts per interval. This could result in too large work chunks."
+                    "cuts per interval. This could result in too large work chunks."
                 )
-            if n_locs > max_locations_per_intervall:
-                perc = n_locs / max_locations_per_intervall
+            if n_locs > max_locations_per_interval:
+                perc = n_locs / max_locations_per_interval
                 warnings.warn(
                     f"Subdivide {len(starts)} has {perc:.2%} of the selected maximum "
-                    "of cuts per interval. This could result in too large work chunks."
+                    "cuts per interval. This could result in too large work chunks."
                 )
 
-            # start new intervall
+            # start new interval
             index_shift = next_start[0]
             sel_cuts = sel_cuts[index_shift:]
             n_locs = len(set(lcuts[sel_cuts]))
@@ -308,7 +561,8 @@ def make_peak_weights(events, log=True):
     return np.log(peak_weights.values)
 
 
-def assigne_workchunk(result_df, max_mem_per_group=200, seed=None, progress=True):
+def assign_workchunk(result_df, max_mem_per_group=200, seed=None, progress=True):
+    max_mem_per_group = max_mem_per_group - 9.4640381e-2
     interval_idxs = np.arange(len(result_df))
     np.random.seed(seed=seed)
     np.random.shuffle(interval_idxs)
@@ -362,28 +616,28 @@ def read_bedgraph(file_path):
 
 
 def to_seq_dict(dataframe, name_col=None):
-    intervalls = dict()
+    intervals = dict()
     for seqname in dataframe["seqname"].unique():
         idx = dataframe["seqname"] == seqname
         df = dataframe[idx].sort_values("start")
-        intervalls[seqname] = {
+        intervals[seqname] = {
             "start": df["start"].values,
             "end": df["end"].values,
         }
         if name_col is None:
-            intervalls[seqname]["name"] = [
+            intervals[seqname]["name"] = [
                 f"{seqname}_{i}" for i in range(len(df["start"]))
             ]
         else:
-            intervalls[seqname]["name"] = df[name_col].values
-    return intervalls
+            intervals[seqname]["name"] = df[name_col].values
+    return intervals
 
 
-def coverage(intervalls, printit=True):
+def coverage(intervals, printit=True):
     """Approximate fraction of covered genome"""
     total = 0
     covered = 0
-    for seqname, data in intervalls.items():
+    for seqname, data in intervals.items():
         total += np.max(data["end"])
         covered += np.sum(data["end"] - data["start"])
     percentage = covered / total
@@ -392,9 +646,9 @@ def coverage(intervalls, printit=True):
     return percentage
 
 
-def extend_intervalls(intervalls, amount):
-    extended_intervalls = dict()
-    for seqname, data in intervalls.items():
+def extend_intervals(intervals, amount):
+    extended_intervals = dict()
+    for seqname, data in intervals.items():
         starts = np.where(data["start"] > amount, data["start"] - amount, 0)
         stops = data["end"] + amount
         last_stop = None
@@ -408,175 +662,23 @@ def extend_intervalls(intervalls, amount):
             if start < last_stop:  # combine
                 last_stop = stop
                 continue
-            # finish intervall
+            # finish interval
             new_stops.append(last_stop)
-            # start new intervall
+            # start new interval
             new_starts.append(start)
             last_stop = stop
         new_stops.append(last_stop)
-        extended_intervalls[seqname] = {
+        extended_intervals[seqname] = {
             "start": np.array(new_starts),
             "end": np.array(new_stops),
             "name": [f"{seqname}_{i}" for i in range(len(new_starts))],
         }
-    return extended_intervalls
-
-
-def parse_args():
-    desc = "Prepair CUT&TAG 2for1 deconvolution."
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument(
-        "fragment_files",
-        metavar="fragment-file.bed.gz",
-        type=str,
-        nargs="+",
-        help="(Compressed) bed files. All files are combined to one single track.",
-    )
-    parser.add_argument(
-        "-l",
-        "--log",
-        dest="logLevel",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Set the logging level (default=INFO).",
-        metavar="LEVEL",
-    )
-    parser.add_argument(
-        "--logfile",
-        help="Write detailed log to this file.",
-        type=str,
-        metavar="logfile",
-    )
-    parser.add_argument(
-        "-o",
-        "--out",
-        help="Output file path (default=work_chunks.pandas_pkl).",
-        default="work_chunks.pandas_pkl",
-        type=str,
-        metavar="dir",
-    )
-    parser.add_argument(
-        "--barcode",
-        help="""Specify a regular expression to  extract cell barcodes from the passed file names.
-        E.g. 'file_([ACGT]*).bed' will extract 'ACCGGC' from '/a/path/a_file_ACCGGC.bed'.
-        Alternatively, pass 'from_bed' to use the fourth column of the bed-file as barcode.
-        If set to empty '', no barcode is saved. (default='from_bed')
-        """,
-        type=str,
-        default="from_bed",
-        metavar="pattern",
-    )
-    parser.add_argument(
-        "--omit-seqname-postfix",
-        help="For the sequence name omit everything behind the first `_`.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--keep-duplicates",
-        help="Do not remove identical reads (PCR duplicates).",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--seed",
-        help="Random state seed to assign intervals to work chunks (default=242567).",
-        type=int,
-        default=242567,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--kde-bw",
-        help="Bandwidth (sigma) for kernel density estimate (KDE) used for interval selection (default=200).",
-        type=float,
-        default=200,
-        metavar="float",
-    )
-    parser.add_argument(
-        "--kde-threshold",
-        help="Minimum KDE value to consider genomic section for deconvolution (default=2).",
-        type=float,
-        default=2,
-        metavar="float",
-    )
-    parser.add_argument(
-        "--selection-padding",
-        help="Additional padding around genomic section selected based on KDE (default=10,000).",
-        type=int,
-        default=10_000,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--selection-bed",
-        help="Alternatively to KDE selection, specifiy bed file of regions to deconvolve.",
-        type=str,
-        default=None,
-        metavar="str",
-    )
-    parser.add_argument(
-        "--region-padding",
-        help="Additional padding around intervals even if specified through bed file (default=5,000).",
-        type=int,
-        default=5_000,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--interval-overlap",
-        help="Overlap to neighboring subdevides and minimal exclusive section size (default=5,000).",
-        type=int,
-        default=10_000,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--max-locs",
-        help="Maximum of unique cuts per interval. Memory demand may increases proportinally to its quadrat (default=15,000).",
-        type=int,
-        default=10_000,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--max-cuts",
-        help="Maximum of cuts per interval. Memory demand may increases proportinally (default=inf).",
-        type=int,
-        default=np.inf,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--memory-target",
-        help="Memory demand target in GBs for individual work chunks (default=300).",
-        type=float,
-        default=300,
-        metavar="float",
-    )
-    parser.add_argument(
-        "--blacklist",
-        help="Bed file of genomic regions to exlcude from the deconvolution.",
-        type=str,
-        default=None,
-        metavar="file.bed.gz2",
-    )
-    parser.add_argument(
-        "--blacklisted-seqs",
-        help="Sequences to exclude from the deconvolution (default=chrM chrUn chrEBV).",
-        type=str,
-        default=["chrM", "chrUn", "chrEBV"],
-        nargs="+",
-        metavar="chrN",
-    )
-    parser.add_argument(
-        "--no-progress", help="Do not show progress.", action="store_true",
-    )
-    parser.add_argument(
-        "--cores",
-        help="Number of CPUs to use for the preparation.",
-        type=int,
-        default=0,
-        metavar="int",
-    )
-    return parser.parse_args()
+    return extended_intervals
 
 
 def get_intervals_by_kde(events, min_density, selection_padding, kde_bw=200):
     sequences = events["seqname"].unique()
-    intervalls_small = dict()
+    intervals_small = dict()
     other_data = dict()
 
     for i, (seqname, seq_events) in enumerate(events.groupby("seqname")):
@@ -592,28 +694,26 @@ def get_intervals_by_kde(events, min_density, selection_padding, kde_bw=200):
         starts, ends = get_intervals(data_idx, selection_padding)
         gstarts = grid[starts]
         gends = grid[ends - 1]
-        intervalls_small[seqname] = {
+        intervals_small[seqname] = {
             "start": gstarts,
             "end": gends,
             "name": [f"{seqname}_{i}" for i in range(len(gstarts))],
         }
-    return intervalls_small
-
-
+    return intervals_small
 
 
 def make_work_packages(
-    intervalls,
+    intervals,
     cut_df,
     interval_padding,
-    max_cuts_per_intervall,
-    max_locations_per_intervall,
+    max_cuts_per_interval,
+    max_locations_per_interval,
 ):
     result_df_list = list()
     cuts_per_seq = {seq: df for seq, df in cut_df.groupby("seqname")}
-    for i, (seqname, data) in enumerate(intervalls.items()):
+    for i, (seqname, data) in enumerate(intervals.items()):
         logger.info(
-            f"Subdividing intervals in sequence {seqname} [{i+1}/{len(intervalls)}]."
+            f"Subdividing intervals in sequence {seqname} [{i+1}/{len(intervals)}]."
         )
         starts, ends = data["start"], data["end"]
         all_cuts = cuts_per_seq.get(seqname)
@@ -648,12 +748,12 @@ def make_work_packages(
                         start,
                         end,
                         interval_padding,
-                        max_cuts_per_intervall,
-                        max_locations_per_intervall,
+                        max_cuts_per_interval,
+                        max_locations_per_interval,
                     )
                 except Exception as e:
                     raise SubdivisionError(
-                        f"In sequence {seqname} intervall {i} cannot be subdivided."
+                        f"In sequence {seqname} interval {i} cannot be subdivided."
                     )
             for w in warns:
                 logger.warning(
@@ -700,19 +800,36 @@ def make_work_packages(
         message += f" and was subdivided with maximal {size:,} locations."
         logger.debug(message)
         nc = richest_sub_int["size"]
-        logger.debug(f"Richest subintervall was cut in {nc:,} locations.")
+        logger.debug(f"Richest subinterval was cut in {nc:,} locations.")
     result_df = pd.concat(result_df_list, axis=0).set_index("name")
     return result_df
 
 
-def approximate_memory_demand(result_df):
-    result_df["memory"] = (result_df["nlocs"] ** 2) * 1e-6 + 5e-2
+def interval_cost(dat, cov1, cov2):
+    unique_locations, log_loc_weight, interleave_index = format_cuts(
+        dat["cuts"]["location"]
+    )
+    ncuts = dat["ncuts"]
+    nlocs = dat["nlocs"]
+
+    l1, r1 = cov1._find_spine(unique_locations)
+    l2, r2 = cov2._find_spine(unique_locations)
+
+    nentries1 = np.sum(l1 + r1)
+    nentries2 = np.sum(l2 + r2)
+
+    return 1e-6 * ncuts + 2.5e-5 * nlocs + 8e-9 * nentries1 + 8e-9 * nentries2 + 1.2e-2
+
+
+def approximate_memory_demand(result_df, cov_c1, cov_c2): 
+    memory = [interval_cost(dat, cov_c1, cov_c2) for name, dat in result_df.iterrows()]
+    result_df["memory"] = pd.Series(index=result_df.index, data=memory, name="memory")
     return result_df
 
 
-def main():
-    args = parse_args()
-    setup_logging(args.logLevel, args.logfile)
+def prep(args):
+    from sep241deconvolve import get_cov_functions
+
     out_path, _ = os.path.split(args.out)
     if not os.path.isdir(out_path):
         logger.info("Making directory %s", out_path)
@@ -749,17 +866,22 @@ def main():
         fragments_files = {file: file for file in args.fragment_files}
 
     dc = DataManager(
-        fragments_files = fragments_files,
-        show_progress = not args.no_progress,
-        remove_pcr_duplicates = not args.keep_duplicates,
+        fragments_files=fragments_files,
+        show_progress=not args.no_progress,
+        remove_pcr_duplicates=not args.keep_duplicates,
     )
-    if args.barcode == "from_bed":
-        logger.info("Taking barcode from third columns of bed file.")
-        len_df = dc.all_fragments(barcode="name")
-    elif args.barcode:
+    if args.bc_from_file:
         logger.info("Taking barcode from file name regex.")
         len_df = dc.all_fragments(barcode="from")
-    
+
+    else:
+        if len(fragments_files) > 10:
+            logger.warning(
+                "More than 10 files detected but barcode is not extracted from file name."
+            )
+        logger.info("Taking barcode from fourth columns of bed file.")
+        len_df = dc.all_fragments(barcode="name", replace_barcode=args.barcode)
+
     all_events = dc.envents_from_intervals(len_df)
     if args.omit_seqname_postfix:
         all_events["seqname"] = all_events["seqname"].str.replace("_.*", "", regex=True)
@@ -768,51 +890,64 @@ def main():
     )
     if args.selection_bed:
         bed_intervals = read_bed(args.selection_bed)
-        intervalls_small = {
+        intervals_small = {
             seqname: df for seqname, df in bed_intervals.groupby("seqname")
         }
     else:
-        intervalls_small = get_intervals_by_kde(
+        intervals_small = get_intervals_by_kde(
             events, args.kde_threshold, args.selection_padding, args.kde_bw
         )
 
-    cov = coverage(intervalls_small, printit=False)
+    cov = coverage(intervals_small, printit=False)
     logger.info(
-        f"Approximatly {cov:.2%} of genome selected for deconvolution before padding."
+        f"Approximately {cov:.2%} of genome selected for deconvolution before padding."
     )
-    intervalls = extend_intervalls(intervalls_small, args.region_padding)
-    cov = coverage(intervalls, printit=False)
+    intervals = extend_intervals(intervals_small, args.region_padding)
+    cov = coverage(intervals, printit=False)
     logger.info(
-        f"Approximatly {cov:.2%} of genome selected for deconvolution after padding."
+        f"Approximately {cov:.2%} of genome selected for deconvolution after padding."
     )
 
     result_df = make_work_packages(
-        intervalls, events, args.interval_overlap, args.max_cuts, args.max_locs
+        intervals, events, args.interval_overlap, args.max_cuts, args.max_locs
     )
-    approximate_memory_demand(result_df)
 
-    assigne_workchunk(result_df, max_mem_per_group=args.memory_target, seed=args.seed)
+    logger.info("Estimating memory demand.")
+    cov_c1, cov_c2 = get_cov_functions(args.c1_cov, args.c2_cov, args.sparsity_threshold)
+    result_df = approximate_memory_demand(result_df, cov_c1, cov_c2)
+
+    assign_workchunk(result_df, max_mem_per_group=args.memory_target, seed=args.seed)
     logger.info("Writing work chunks to %s", args.out)
     result_df.to_pickle(args.out)
     n_wg = len(result_df["workchunk"].unique())
     print(
         f"""
-    Preperation finished and there are {n_wg:,} work chunks (0-{n_wg-1}).
-
+    Preparation finished and there are {n_wg:,} work chunks (0-{n_wg-1}).
     Run deconvolution using SLURM:
-
-        sbatch --array=0-{n_wg-1} --mem={args.memory_target}G sep241deconvolve.py {args.out}
-
-    Run in bash:
-
+        sbatch --array=0-{n_wg-1} --mem={args.memory_target} <(sep241deconvolve_sbatch) {args.out}
+    Run in bash or zsh:
         for wc in $(seq 0 {n_wg-1}); do
-            ./sep241deconvolve.py {args.out} --workchunk $wc
+            sep241deconvolve {args.out} --workchunk $wc
         done
     """
     )
-    with open(args.out+".njobs", "w") as buff:
+    with open(args.out + ".njobs", "w") as buff:
         buff.write(str(n_wg))
 
 
-if __name__ == "__main__":
+def main():
+    args = parser.parse_args()
+    setup_logging(args.logLevel, args.logfile)
+    logger.info(args)
+
+    if args.compiledir:
+        set_flag("base_compiledir", args.compiledir)
+        prep(args)
+    else:
+        with tempfile.TemporaryDirectory() as directory:
+            set_flag("base_compiledir", directory)
+            prep(args)
+
+if __name__ == '__main__':
     main()
+

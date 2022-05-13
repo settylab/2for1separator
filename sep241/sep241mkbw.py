@@ -15,86 +15,95 @@ from sep241util import check_length_distribution_flip
 from sep241util import MissingData
 
 
-def parse_args():
-    desc = "Prepair CUT&TAG 2for1 deconvolution."
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument(
-        "jobdata",
-        metavar="jobdata-file",
-        type=str,
-        help="Jobdata with cuts per intervall and workchunk ids.",
-    )
-    parser.add_argument(
-        "chrom_sizes_file",
-        help="""Chromosome sizes file with the two columns seqname and size.
-        You can use a script like
-        https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/fetchChromSizes
-        to fetch the file.
-        """,
-        metavar="chrom-sizes-file",
-        type=str,
-    )
-    parser.add_argument(
-        "-l",
-        "--log",
-        dest="logLevel",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Set the logging level (default=INFO).",
-        metavar="LEVEL",
-    )
-    parser.add_argument(
-        "--logfile",
-        help="Write detailed log to this file.",
-        type=str,
-        metavar="logfile",
-    )
-    parser.add_argument(
-        "-o",
-        "--out",
-        help="Output directory (default is the path of the jobdata).",
-        type=str,
-        metavar="dir",
-    )
-    parser.add_argument(
-        "--unit",
-        help="Output will have the unit `cuts per {unit} base pairs` (default=100).",
-        type=int,
-        default=100,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--region",
-        help="Limit output to this genomic region.",
-        type=str,
-        metavar="chr:start-end",
-    )
-    parser.add_argument(
-        "--exclude-flipped",
-        help="Exclude results from workchunks with flipped length distribution.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--span",
-        help="The span of base pairs with the same value in the ouptut bigwig (default=10).",
-        type=int,
-        default=10,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--no-check",
-        help="Do not test for flipped length distributions.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--no-progress", help="Do not show progress.", action="store_true",
-    )
-    parser.add_argument(
-        "--force",
-        help="Make bigwigs even if some results are missing.",
-        action="store_true",
-    )
-    return parser.parse_args()
+desc = """Export deconvolution results as
+`bigWIG files <https://genome.ucsc.edu/goldenPath/help/bigWig.html>`_.
+The program produces two files: ``deconv_cuts-per-100bp_c1.bw``
+and ``deconv_cuts-per-100bp_c2.bw`` for the location-marginal cut densities
+of channel 1 and 2, respectively.
+
+If ``--unit [number]`` is specified, then the output file names will be
+``deconv_cuts-per-[number]bp_c1.bw`` and ``deconv_cuts-per-[number]bp_c2.bw``.
+The files can be used for visualization of the results using, e.g., the
+`IGV browser <https://software.broadinstitute.org/software/igv/>`_ or the
+`JBrowser 2 <https://jbrowse.org/jb2/>`_.
+"""
+parser = argparse.ArgumentParser(description=desc)
+parser.add_argument(
+    "jobdata",
+    metavar="jobdata-file",
+    type=str,
+    help="Jobdata with cuts per interval and workchunk ids.",
+)
+parser.add_argument(
+    "chrom_sizes_file",
+    help="""Chromosome sizes file with the two columns: seqname and size.
+    You can use a script like
+    https://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/fetchChromSizes
+    to fetch the file.
+    """,
+    metavar="chrom-sizes-file",
+    type=str,
+)
+parser.add_argument(
+    "-l",
+    "--log",
+    dest="logLevel",
+    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    default="INFO",
+    help="Set the logging level (default=INFO).",
+    metavar="LEVEL",
+)
+parser.add_argument(
+    "--logfile",
+    help="Write detailed log to this file.",
+    type=str,
+    metavar="logfile",
+)
+parser.add_argument(
+    "-o",
+    "--out",
+    help="Output directory (default is the path of the jobdata).",
+    type=str,
+    metavar="dir",
+)
+parser.add_argument(
+    "--unit",
+    help="Output will have the unit `cuts per {unit} base pairs` (default=100).",
+    type=int,
+    default=100,
+    metavar="int",
+)
+parser.add_argument(
+    "--region",
+    help="Limit output to this genomic region.",
+    type=str,
+    metavar="chr:start-end",
+)
+parser.add_argument(
+    "--exclude-flipped",
+    help="Exclude results from workchunks with flipped length distribution.",
+    action="store_true",
+)
+parser.add_argument(
+    "--span",
+    help="The span of base pairs with the same value in the output bigwig (default=10).",
+    type=int,
+    default=10,
+    metavar="int",
+)
+parser.add_argument(
+    "--no-check",
+    help="Do not test for flipped length distributions.",
+    action="store_true",
+)
+parser.add_argument(
+    "--no-progress", help="Do not show progress.", action="store_true",
+)
+parser.add_argument(
+    "--force",
+    help="Make bigwigs even if some results are missing.",
+    action="store_true",
+)
 
 
 def generate_entry(
@@ -193,13 +202,13 @@ def make_bigwigs(
         log_signal_c2 = maxlle[f"f_c2_{name}"][idx][start_idx:end_idx]
         if np.max(log_signal_c1) > max_log_value:
             logger.warning(
-                f"The c1 track of intervall {name} in work chunk {wg} contains "
+                f"The c1 track of interval {name} in work chunk {wg} contains "
                 "values that are too large. The interval will be skipped."
             )
             continue
         if np.max(log_signal_c2) > max_log_value:
             logger.warning(
-                f"The c2 track of intervall {name} in work chunk {wg} contains "
+                f"The c2 track of interval {name} in work chunk {wg} contains "
                 "values that are too large. The interval will be skipped."
             )
             continue
@@ -246,7 +255,7 @@ def make_bigwigs(
 
 
 def main():
-    args = parse_args()
+    args = parser.parse_args()
     setup_logging(args.logLevel, args.logfile)
     logger.info("Reading jobdata.")
     workdata = read_job_data(args.jobdata)
@@ -258,7 +267,7 @@ def main():
     except MissingData:
         raise MissingData(
             "Results are missing. Complete missing work chunks or pass --force to "
-            "prodce bigwig files regardless."
+            "produce bigwig files regardless."
         )
 
     if not args.no_check:

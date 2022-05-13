@@ -18,60 +18,70 @@ from sep241util import check_length_distribution_flip
 from sep241deconvolve import get_length_dist_modes
 
 
-def parse_args():
-    desc = """Make cut event bed files listing the target specific likelihoods.
-    The two target-specific output .bed file will have the following 6 tab-seperated columns:
-        chrom, chromStart, chromEnd, name, likelihood, length marginal likelihood
-    """
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument(
-        "jobdata",
-        metavar="jobdata-file",
-        type=str,
-        nargs="?",
-        help="Jobdata with cuts per intervall and workchunk ids.",
-    )
-    parser.add_argument(
-        "-l",
-        "--log",
-        dest="logLevel",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Set the logging level (default=INFO).",
-        metavar="LEVEL",
-    )
-    parser.add_argument(
-        "--logfile",
-        help="Write detailed log to this file.",
-        type=str,
-        metavar="logfile",
-    )
-    parser.add_argument(
-        "-o",
-        "--out",
-        help="Output directory (default is the path of the jobdata).",
-        type=str,
-        metavar="out_dir",
-    )
-    parser.add_argument(
-        "--no-check",
-        help="Do not test for flipped length distributions.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--no-progress", help="Do not show progress.", action="store_true",
-    )
-    parser.add_argument(
-        "--force",
-        help="Make bigwigs even if some results are missing.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--exclude-flipped",
-        help="Exclude results from workchunks with flipped length distribution.",
-        action="store_true",
-    )
-    return parser.parse_args()
+desc = """Export deconvolution results for each individual event in the data.
+Each end of a fragment is considered an event. The output format is one
+bed-like tab-separated text table per channel: ``c1.bed`` and ``c2.bed``.
+The columns of the two tables correspond to:
+
+    chrom, chromStart, chromEnd, name, likelihood, location-marginal likelihood
+
+Where *likelihood* corresponds to the likelihood of the event to originate
+from the respective target and *location marginal likelihood* ignores the
+length of the associated fragment and only uses the genomic-location-specific
+target likelihood. The one-dimensional
+genomic-location-specific target likelihood can also be exported with
+sep241mkbw.
+"""
+parser = argparse.ArgumentParser(description=desc)
+parser.add_argument(
+    "jobdata",
+    metavar="jobdata-file",
+    type=str,
+    nargs="?",
+    help="Jobdata with cuts per interval and workchunk ids.",
+)
+parser.add_argument(
+    "-l",
+    "--log",
+    dest="logLevel",
+    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    default="INFO",
+    help="Set the logging level (default=INFO).",
+    metavar="LEVEL",
+)
+parser.add_argument(
+    "--logfile",
+    help="Write detailed log to this file.",
+    type=str,
+    metavar="logfile",
+)
+parser.add_argument(
+    "-o",
+    "--out",
+    help="Output directory (default is the path of the jobdata).",
+    type=str,
+    metavar="out_dir",
+)
+parser.add_argument(
+    "--no-check",
+    help="Do not test for flipped length distributions.",
+    action="store_true",
+)
+parser.add_argument(
+    "--no-progress", 
+    help="Do not show progress.", 
+    action="store_true",
+)
+parser.add_argument(
+    "--force",
+    help="Make bigwigs even if some results are missing.",
+    action="store_true",
+)
+parser.add_argument(
+    "--exclude-flipped",
+    help="Exclude results from workchunks with flipped length distribution.",
+    action="store_true",
+)
 
 
 def likelihoods_per_cut(workdata, map_results, progress=True):
@@ -116,8 +126,8 @@ def likelihoods_per_cut(workdata, map_results, progress=True):
 
 
 def main():
-    args = parse_args()
-    logging.getLogger("filelock").setLevel(logging.ERROR) # theano produces a lot
+    args = parser.parse_args()
+    logging.getLogger("filelock").setLevel(logging.ERROR) # aesara produces a lot
     setup_logging(args.logLevel, args.logfile)
     logger.debug("Loglevel is on DEBUG.")
 

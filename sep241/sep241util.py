@@ -5,24 +5,15 @@ import re
 import logging
 import pickle
 
-import gzip
-import bz2
-import tabix
 import numpy as np
 import scipy
 import pandas as pd
-import plotnine as p9
 from tqdm.auto import tqdm
 
 from sklearn.gaussian_process import GaussianProcessRegressor
 import sklearn.gaussian_process.kernels as kernels
 from sklearn.linear_model import LinearRegression
 from scipy.stats import lognorm
-import multiprocessing
-
-from KDEpy import FFTKDE
-
-from gtfparse import read_gtf
 
 
 class NoData(Exception):
@@ -65,11 +56,67 @@ def setup_logging(level, logfile=None):
     logger.addHandler(ch)
 
 
+def set_flag(flag, value=None):
+    """
+    Sets or overwrites the theano `flag` in the environment variable 'THEANO_FLAGS'.
+
+    :param flag: The flag name that is to be overwritten or set.
+    :param value: The value to be assigned to the flag. If it is
+        `None` then `flag` will be pasted as is into 'THEANO_FLAGS'.
+    :return: The new value of 'THEANO_FLAGS'.
+    """
+    if not isinstance(flag, str):
+        raise TypeError("The argument `flag` needs to be a string.")
+    flagString = os.getenv("THEANO_FLAGS")
+
+    if value is None:
+        if flagString:
+            flag = flagString + "," + flag
+        os.environ["THEANO_FLAGS"] = flag
+        return newFlagString
+
+    if not isinstance(value, str):
+        raise TypeError("The argument `value` needs to be a string or `None`.")
+
+    if flagString:
+        oldFlags = flagString.split(",")
+    else:
+        oldFlags = []
+    flagTag = flag + "="
+    newFlags = [s for s in oldFlags if flagTag not in s]
+    newFlags.append(flagTag + value)
+    newFlagString = ",".join(newFlags)
+    os.environ["THEANO_FLAGS"] = newFlagString
+    return newFlagString
+
+
+def format_cuts(locations_ds):
+    """Formats cuts as represented in the model."""
+
+    interleave_index = locations_ds.rank(method="dense").astype(int) - 1
+
+    cuts_per_pos = locations_ds.value_counts(sort=False).sort_index()
+    midpoints = (cuts_per_pos.index[:-1] + cuts_per_pos.index[1:]) / 2
+    rectangle_width = np.diff(
+        np.concatenate([[locations_ds.min()], midpoints, [locations_ds.max()]])
+    )
+    # ends have only half of expected width
+    rectangle_width[0] += rectangle_width[0]
+    rectangle_width[-1] += rectangle_width[-1]
+    log_loc_weight = np.log(rectangle_width)
+
+    location_shift = np.median(cuts_per_pos.index).astype(int)  # for numeric ease
+    unique_locations = np.array(cuts_per_pos.index - location_shift)
+
+    return unique_locations, log_loc_weight, interleave_index.values
+
+
 def write_bed(bed_df, out_path):
     bed_df.to_csv(out_path, sep="\t", header=False, index=False)
 
 
 def detect_cores(cores=None):
+    import multiprocessing
     if not cores:
         cores = multiprocessing.cpu_count()
         logger.info("Detecting %s compute cores.", cores)
@@ -83,7 +130,7 @@ def read_region_string(
     is_region = region_format.match(feature)
     if not is_region:
         raise NotARegion(
-            f"The passed feature `{feature}` does not match region the forman seqname:start-end."
+            f"The passed feature `{feature}` does not match the region format seqname:start-end."
         )
     seq, start, end = is_region.groups()
     start = int(re.sub("[^0-9]", "", start))
@@ -173,7 +220,7 @@ def posterior_mode_weights(workdata, map_results):
 def check_length_distribution_flip(workdata, map_results, threshold=0.9):
     """Look for flip between posterior length distributions.
 
-    threshold: Pearson corrleation threshold for difference
+    :param threshold: Pearson correlation threshold for difference
         between c1 and c2 (default=.9).
     """
     logger.info("Calculating length distributions.")
@@ -226,6 +273,7 @@ def check_length_distribution_flip(workdata, map_results, threshold=0.9):
 
 def read_job_data(jobdata_file):
     return pd.read_pickle(jobdata_file)
+
 
 def to_grouped_string(list_of_integers):
     grouped_str = ""
@@ -280,8 +328,8 @@ class LevelSet:
     Used by the gtf drawing tool.
 
     Remembers levels occupied by intervals if called
-    for all intervalls sorted by theire start.
-    Ensures a minimal  paddingdistance between intervals in
+    for all intervals sorted by their start.
+    Ensures a minimal padding distance between intervals in
     same level.
     """
 
@@ -323,20 +371,19 @@ def igv_plot(
     """
     Draws an IGV-like plot. Used by Multitool class.
 
-    Parameter
-    ---------
-    df: DataFrame with reads and columns 'start', 'stop' and
+    :param df: DataFrame with reads and columns 'start', 'stop' and
         columns specified by group and color.
-    color: Column of df to color tracks by. Must be coarser than groups.
-    group: Column of df to draw different tracks per group. Must be finer than color.
-    facet_scales: passed to ggplot facet_grid to scale axis of tracks.
-    min_count: Filter out tracks with less reads (default: 0).
-    sort_by: Column of df. Sort tracks by the median within group. (default: 'rna_pseudotime')
-    relabeling: Dict to rename track names.
-    smooth_events: Plot kde of event rates instead of IGV if not None.
+    :param color: Column of df to color tracks by. Must be coarser than groups.
+    :param group: Column of df to draw different tracks per group. Must be finer than color.
+    :param facet_scales: passed to ggplot facet_grid to scale axis of tracks.
+    :param min_count: Filter out tracks with less reads (default: 0).
+    :param sort_by: Column of df. Sort tracks by the median within group. (default: 'rna_pseudotime')
+    :param relabeling: Dict to rename track names.
+    :param smooth_events: Plot kde of event rates instead of IGV if not None.
         Use value as bw_method in scipy.stats.gaussian_kde.
-    max_res: Maximum grid resolution when plotting smooth_events.
+    :param max_res: Maximum grid resolution when plotting smooth_events.
     """
+    import plotnine as p9
     if color is not None and group is None:
         group = color
     elif color is not None:
@@ -384,6 +431,8 @@ def igv_plot(
             grid_idx = np.linspace(0, upper_bound - lower_bound, max_res).astype(int)
         else:
             grid_idx = slice(None)
+
+        from KDEpy import FFTKDE
         if group is None:
             kernel = FFTKDE(kernel="gaussian", bw=smooth_events)
             kernel = kernel.fit(mdf["location"].values)
@@ -473,18 +522,17 @@ def plot_gtf(
     """
     Draw features of a gtf DataFrame. Used by Multitool.
 
-    Parameter
-    ---------
-    gtf_dataframe: A pandas data frame from a gtf parsed by gtfparse.
-    draw_genes: Bool, if genes should be included.
-    draw_exons: Bool, if exons should be drwan.
-    draw_transcripts: Bool, if transcripts should be drawn (in a seperate track).
-    draw_codons: Bool, if start and stop codon should be marked.
-    draw_utr: Bool, if UTR should be drawn.
-    draw_labels: Bool, if labels with gene names should be dran on genes.
-    padding: Minimal horizontal distance in bp between drawn genes/transcripts.
+    :param gtf_dataframe: A pandas data frame from a gtf parsed by gtfparse.
+    :param draw_genes: Bool, if genes should be included.
+    :param draw_exons: Bool, if exons should be drwan.
+    :param draw_transcripts: Bool, if transcripts should be drawn (in a seperate track).
+    :param draw_codons: Bool, if start and stop codon should be marked.
+    :param draw_utr: Bool, if UTR should be drawn.
+    :param draw_labels: Bool, if labels with gene names should be dran on genes.
+    :param padding: Minimal horizontal distance in bp between drawn genes/transcripts.
         If features are too close, they a shifted vertically.
     """
+    import plotnine as p9
     arrows = list()
     boxes = list()
     labels = list()
@@ -492,8 +540,7 @@ def plot_gtf(
     if draw_genes:
         idx = gtf_dataframe["feature"] == "gene"
         genes_df = gtf_dataframe.loc[idx, :].sort_values("start")
-        for gene in genes_df.index:
-            gene_dat = genes_df.loc[gene, :]
+        for gene, gene_dat in genes_df.iterrows():
             start = gene_dat["start"]
             end = gene_dat["end"]
             gene_name = gene_dat["gene_name"]
@@ -702,7 +749,9 @@ class DataManager:
         self.comment = "#"
         self.remove_pcr_duplicates = remove_pcr_duplicates
 
+
     def plot_frag_length(self, log_scale=True):
+        import plotnine as p9
         alen = self.all_fragments()
         pl = (
             p9.ggplot(df, p9.aes("lengths"))
@@ -715,6 +764,7 @@ class DataManager:
         return pl
 
     def plot_genes(self, genes, x="pseudotime", points=True, regression=True, std=True):
+        import plotnine as p9
         if isinstance(genes, str):
             genes = genes.split(",")
         if regression:
@@ -749,6 +799,7 @@ class DataManager:
     def gtf_file(self, gtf_file):
         if gtf_file is not None:
             logger.info("Parsing gtf file...")
+            from gtfparse import read_gtf
             self.gtf = read_gtf(gtf_file)
         self._gtf_file = gtf_file
 
@@ -760,6 +811,8 @@ class DataManager:
     def gtf(self, gtf):
         gtf["stranded_start"] = np.where(gtf["strand"] == "-", gtf["end"], gtf["start"])
         gtf["stranded_end"] = np.where(gtf["strand"] == "-", gtf["start"], gtf["end"])
+        if not gtf["seqname"][0].startswith("chr"):
+            gtf["seqname"] = 'chr' + gtf["seqname"]
         self.gene_names = set(gtf["gene_name"].unique())
         self._gtf = gtf
 
@@ -833,25 +886,23 @@ class DataManager:
         """
         A plot similar to the IGV visualization of ATAC reads.
 
-        Parameter
-        ---------
-        feature: A gene, genomic interval or df of ATAC reads.
-        max_distance: Maximal distance around the selected feature to show.
-        nuc_size: Length of ATAC reads at which to classify as nucleosome reads.
-        group: Used in ggplot for faceting. Must be a subset of `color`.
-        color: Used in ggplot for coloring of tracks. Must be a superset of `group`.
-        group_nucs: Put nucleosome reads in a subgroup.
-        sort_by: Sort gorups and color by this column.
-        obs_from: Select annData object. Must be 'atac' or 'rna'.
-        y_scale: Must be 'fixed' or 'free'.
-        draw_peaks: Mark peaks selected in atac annData object.
-        min_counts: Tracks with less than that will not be plotted.
-        smooth_events_bw: If set to number draw event kde with that bw instead of igv signal.
-        mark_nucs: List of nucleosome positions to mark.
-        anno_plot: Call plot_gtf to show genes and genomic features.
-        color_anno_by: E.g. 'features' or 'genes'.
-        full_label: Set to True to write full lable into facet headers.
-        **kwargs: Args passed to plot_gtf.
+        :param feature: A gene, genomic interval or df of ATAC reads.
+        :param max_distance: Maximal distance around the selected feature to show.
+        :param nuc_size: Length of ATAC reads at which to classify as nucleosome reads.
+        :param group: Used in ggplot for faceting. Must be a subset of `color`\.
+        :param color: Used in ggplot for coloring of tracks. Must be a superset of `group`\.
+        :param group_nucs: Put nucleosome reads in a subgroup.
+        :param sort_by: Sort groups and color by this column.
+        :param obs_from: Select annData object. Must be `ATAC` or `RNA`\.
+        :param y_scale: Must be `fixed` or `free`\.
+        :param draw_peaks: Mark peaks selected in ATAC annData object.
+        :param min_counts: Tracks with less than that will not be plotted.
+        :param smooth_events_bw: If set to number draw event kde with that bw instead of igv signal.
+        :param mark_nucs: List of nucleosome positions to mark.
+        :param anno_plot: Call plot_gtf to show genes and genomic features.
+        :param color_anno_by: E.g. `features` or `genes`\.
+        :param full_label: Set to True to write full label into facet headers.
+        :param \*\*kwargs: Args passed to plot_gtf.
         """
         if isinstance(feature, str):
             intervals, events, lower_bound, upper_bound = self.get_fragments(
@@ -926,6 +977,7 @@ class DataManager:
             group = "_igv_group"
             events[group] = pd.Categorical(grouped, categories=sorted_group_cats)
 
+        import plotnine as p9
         pl = igv_plot(
             events,
             group=group,
@@ -1035,9 +1087,11 @@ class DataManager:
         reads = list()
         if file.endswith("gz"):
             logger.debug("Assuming gzip format for file %s", file)
+            import gzip
             openfn = gzip.open
         elif file.endswith("gz2") or file.endswith("bz2"):
             logger.debug("Assuming bzip2 format for file %s", file)
+            import bz2
             openfn = bz2.open
         else:
             logger.debug("Assuming no compression for file %s", file)
@@ -1061,12 +1115,12 @@ class DataManager:
                         n_fileds = min(4, len(line.decode().split("\t")))
                         logger.debug("Using %d columns of %s.", n_fileds, file)
                 if n_fileds == 3:
-                    seq, s, e = line.decode().split("\t")[:3]
+                    seq, s, e = line.decode().strip().split("\t")[:3]
                     start = int(s)
                     end = int(e)
                     reads.append((rep, seq, start, end, f"read-{i}"))
                 elif n_fileds == 4:
-                    seq, s, e, bc = line.decode().split("\t")[:4]
+                    seq, s, e, bc = line.decode().strip().split("\t")[:4]
                     start = int(s)
                     end = int(e)
                     reads.append((rep, seq, start, end, bc))
@@ -1078,7 +1132,7 @@ class DataManager:
         self._cache[h] = reads
         return reads
 
-    def all_fragments(self, barcode=None):
+    def all_fragments(self, barcode=None, replace_barcode=None):
         reads = list()
         all_lengths = list()
         for rep, file in self.fragments_files.items():
@@ -1093,6 +1147,9 @@ class DataManager:
                 raise BarcodeError("Barcode '%s' must be 'from' or 'name'.", barcode)
             result_df["barcode"] = result_df[barcode]
         total_reads = len(result_df)
+        if replace_barcode:
+            repl = lambda m: m.group(1)
+            result_df['barcode'] = result_df['barcode'].str.replace(replace_barcode, repl, regex=True)
         if self.remove_pcr_duplicates:
             if "barcode" in result_df.columns:
                 result_df = result_df.drop_duplicates(subset=["barcode", "seqname", "start", "end"])
@@ -1110,6 +1167,7 @@ class DataManager:
 
     def get_intervals(self, region, nuc_size=120, with_name=False):
         intervals = list()
+        import tabix
         for rep, fragments_file in self.fragments_files.items():
             tb = tabix.open(fragments_file)
             records = tb.querys(region)
@@ -1198,6 +1256,7 @@ class DataManager:
         count_prior=0,
         bins=None,
     ):
+        import plotnine as p9
         if gdf is None:
             gdf = self.length_histograms(
                 bin_width=bin_width,

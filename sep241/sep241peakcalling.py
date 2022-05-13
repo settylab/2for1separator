@@ -16,117 +16,131 @@ from sep241util import check_length_distribution_flip
 from sep241util import MissingData
 
 
-def parse_args():
-    desc = "Peak calling after CUT&TAG 2for1 deconvolution."
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument(
-        "jobdata",
-        metavar="jobdata-file",
-        type=str,
-        nargs="?",
-        help="Jobdata with cuts per intervall and workchunk ids.",
-    )
-    parser.add_argument(
-        "-l",
-        "--log",
-        dest="logLevel",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Set the logging level (default=INFO).",
-        metavar="LEVEL",
-    )
-    parser.add_argument(
-        "--logfile",
-        help="Write detailed log to this file.",
-        type=str,
-        metavar="logfile",
-    )
-    parser.add_argument(
-        "-o",
-        "--out",
-        help="Output directory (default is the path of the jobdata).",
-        type=str,
-        metavar="out_dir",
-    )
-    parser.add_argument(
-        "--c1-min-peak-size",
-        help="Minimal number of bases per peak for component 1 (default=100).",
-        type=int,
-        default=100,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--c2-min-peak-size",
-        help="Minimal number of bases per peak for component 2 (default=400).",
-        type=int,
-        default=400,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--c1-smooth",
-        help="Apply gaussian filter with this standard deviation to component 1 (default=0).",
-        type=float,
-        default=0,
-        metavar="float",
-    )
-    parser.add_argument(
-        "--c2-smooth",
-        help="Apply gaussian filter with this standard deviation to component 2 (default=2000).",
-        type=float,
-        default=2000,
-        metavar="float",
-    )
-    parser.add_argument(
-        "--fraction-in-peaks",
-        help="Fraction of reads that are expected to be in peaks (default=0.5).",
-        type=float,
-        default=0.5,
-        metavar="float",
-    )
-    parser.add_argument(
-        "--fraction-overlap",
-        help="""If more than this fraction of a peak overlaps with a peak of the
-        other target than it is considered an overlapping region (default=0.5).""",
-        type=float,
-        default=0.5,
-        metavar="float",
-    )
-    parser.add_argument(
-        "--span",
-        help="Resolution in number of base pairs (default=10).",
-        type=int,
-        default=10,
-        metavar="int",
-    )
-    parser.add_argument(
-        "--no-check",
-        help="Do not test for flipped length distributions.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--only-check", help="Stop after initial checking.", action="store_true",
-    )
-    parser.add_argument(
-        "--uncorrected",
-        help="Do not correct cut ratio estimate with Bayesian prior.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--force",
-        help="Call peaks even if some results are missing.",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--no-progress", help="Do not show progress.", action="store_true",
-    )
-    parser.add_argument(
-        "--cores",
-        help="Number of CPUs to use for the preparation.",
-        type=int,
-        default=0,
-        metavar="int",
-    )
-    return parser.parse_args()
+desc = """Peak calling after CUT&TAG 2for1 deconvolution.
+We use the positional marginal likelihoods to originate from one of the two
+channels to identify peaks of high cut likelihood for the respective channels
+according to
+`CUT&Tag2for1: a modified method
+for simultaneous profiling of the accessible and silenced regulome in single
+cells <https://doi.org/10.1186/s13059-022-02642-w>`_.
+
+By default, channel 1 is assumed to contain narrow, sharp peaks. Channel 2
+is assumed to contain broad domains of a more gradually changing signal. The minimum
+peak size can be controlled by ``--c1-min-peak-size`` and
+``--c2-min-peak-size``. Additionally, signals can be
+smoothed through ``--c1-smooth`` and ``--c2-smooth`` before peak calling
+to reflect a more gradual change.
+"""
+parser = argparse.ArgumentParser(description=desc)
+parser.add_argument(
+    "jobdata",
+    metavar="jobdata-file",
+    type=str,
+    nargs="?",
+    help="Jobdata with cuts per interval and workchunk ids.",
+)
+parser.add_argument(
+    "-l",
+    "--log",
+    dest="logLevel",
+    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    default="INFO",
+    help="Set the logging level (default=INFO).",
+    metavar="LEVEL",
+)
+parser.add_argument(
+    "--logfile",
+    help="Write detailed log to this file.",
+    type=str,
+    metavar="logfile",
+)
+parser.add_argument(
+    "-o",
+    "--out",
+    help="Output directory (default is the directory of the jobdata input file).",
+    type=str,
+    metavar="out_dir",
+)
+parser.add_argument(
+    "--c1-min-peak-size",
+    help="Minimal number of bases per peak for channel 1 (default=100).",
+    type=int,
+    default=100,
+    metavar="int",
+)
+parser.add_argument(
+    "--c2-min-peak-size",
+    help="Minimal number of bases per peak for channel 2 (default=400).",
+    type=int,
+    default=400,
+    metavar="int",
+)
+parser.add_argument(
+    "--c1-smooth",
+    help="Apply gaussian filter with this standard deviation to channel 1 (default=0).",
+    type=float,
+    default=0,
+    metavar="float",
+)
+parser.add_argument(
+    "--c2-smooth",
+    help="Apply gaussian filter with this standard deviation to channel 2 (default=2000).",
+    type=float,
+    default=2000,
+    metavar="float",
+)
+parser.add_argument(
+    "--fraction-in-peaks",
+    help="Fraction of reads that are expected to be in peaks (default=0.5).",
+    type=float,
+    default=0.5,
+    metavar="float",
+)
+parser.add_argument(
+    "--fraction-overlap",
+    help="""If more than this fraction of a peak overlaps with a peak of the
+    other target, then it is considered an overlapping region (default=0.5).""",
+    type=float,
+    default=0.5,
+    metavar="float",
+)
+parser.add_argument(
+    "--span",
+    help="Resolution in number of base pairs (default=10).",
+    type=int,
+    default=10,
+    metavar="int",
+)
+parser.add_argument(
+    "--no-check",
+    help="Do not test for flipped length distributions.",
+    action="store_true",
+)
+parser.add_argument(
+    "--only-check", 
+    help="Stop after initial checking.",
+    action="store_true",
+)
+parser.add_argument(
+    "--uncorrected",
+    help="Do not correct cut ratio estimate with Bayesian prior.",
+    action="store_true",
+)
+parser.add_argument(
+    "--force",
+    help="Call peaks even if some results are missing.",
+    action="store_true",
+)
+parser.add_argument(
+    "--no-progress", help="Do not show progress.", action="store_true",
+)
+parser.add_argument(
+    "--cores",
+    help="Number of CPUs to use for the preparation.",
+    type=int,
+    default=0,
+    metavar="int",
+) 
 
 
 def interpolate_entry(job):
@@ -199,13 +213,13 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
         log_signal_c2 = maxlle[f"f_c2_{name}"][idx][start_idx:end_idx]
         if np.max(log_signal_c1) > max_log_value:
             logger.warning(
-                f"The c1 track of intervall {name} in work chunk {wg} contains "
+                f"The c1 track of interval {name} in work chunk {wg} contains "
                 "values that are too large. The interval will be skipped."
             )
             continue
         if np.max(log_signal_c2) > max_log_value:
             logger.warning(
-                f"The c2 track of intervall {name} in work chunk {wg} contains "
+                f"The c2 track of interval {name} in work chunk {wg} contains "
                 "values that are too large. The interval will be skipped."
             )
             continue
@@ -271,11 +285,13 @@ def interpolate(
     else:
         smooth_msg = "none"
     logger.info("Interpolating + smoothening %s.", smooth_msg)
+    n_jobs = len(jobs)
+    mutliprocessing_chunksize = min(10, int(np.ceil(n_jobs/cores)))
     with threadpool_limits(limits=1):
         with multiprocessing.Pool(cores) as pool:
             for df in tqdm(
-                pool.imap(interpolate_entry, jobs, 10),
-                total=len(jobs),
+                pool.imap(interpolate_entry, jobs, mutliprocessing_chunksize),
+                total=n_jobs,
                 disable=not progress,
                 desc="intervals",
             ):
@@ -357,7 +373,7 @@ def mark_peaks(
     else:
         comb_data["c1_peak"] = comb_data["c1"] > bound_c1
     fraction_selected = comb_data["c1_peak"].sum() / len(comb_data["c1_peak"])
-    msg = f"c1: {fraction_selected:.2%} of intervalls"
+    msg = f"c1: {fraction_selected:.2%} of intervals"
     if work_coverage:
         msg += f" and {work_coverage*fraction_selected:.2%} of genome selected."
     logger.info(msg)
@@ -374,7 +390,7 @@ def mark_peaks(
     else:
         comb_data["c2_peak"] = comb_data["c2"] > bound_c2
     fraction_selected = comb_data["c2_peak"].sum() / len(comb_data["c2_peak"])
-    msg = f"c2: {fraction_selected:.2%} of intervalls"
+    msg = f"c2: {fraction_selected:.2%} of intervals"
     if work_coverage:
         msg += f" and {work_coverage*fraction_selected:.2%} of genome selected."
     logger.info(msg)
@@ -572,10 +588,10 @@ def merge_overlapping_intervals(interval_df):
             if start < last_stop:  # combine
                 last_stop = max(last_stop, stop)
                 continue
-            # finish intervall
+            # finish interval
             new_stops.append(last_stop)
             new_means.append(np.mean(means))
-            # start new intervall
+            # start new interval
             new_starts.append(start)
             last_stop = stop
         new_stops.append(last_stop)
@@ -723,7 +739,7 @@ def write_peaks(bed_c1, bed_c2, overlaps, out_path):
 
 
 def main():
-    args = parse_args()
+    args = parser.parse_args()
     setup_logging(args.logLevel, args.logfile)
     logger.debug("Loglevel is on DEBUG.")
     cores = detect_cores(args.cores)
@@ -734,7 +750,7 @@ def main():
     logger.info("Reading jobdata.")
     workdata = read_job_data(args.jobdata)
     work_coverage = estimated_deconvolved_fraction(workdata)
-    logger.info(f"At most {work_coverage:.2%} of the geome is deconvolved.")
+    logger.info(f"At most {work_coverage:.2%} of the genome is deconvolved.")
     logger.info("Reading deconvolution results.")
     try:
         map_results = read_results(

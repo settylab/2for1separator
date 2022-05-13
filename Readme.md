@@ -9,31 +9,39 @@ originate from one target or the other. The result is a set of cut density
 tracks that represent the estimated number of cuts induced by the two
 antibodies used in the CUT&Tag2for1 experiment.
 
-![Schmenatic](schematic.jpg?raw=true "Schematic")
+![Schmenatic](https://github.com/settylab/2for1separator/raw/main/schematic.jpg?raw=true "Schematic")
 
-## Disclaimer
-
-This is an alpha version with very high memory demand of up to
-300 GB. A new version, that aims to reduce the resource demand,
-will be released soon.
+## Documentation
+Insert a link to the documentation here. Only shown in GitHub Readme.
 
 ## Installation
 
-Please make sure `python` points to a Python 3.9 interpreter
-and istall the requirements:
+Please make sure `python` points to a Python 3.9+ interpreter
+and install the package:
+```bash
+pip install sep241
 ```
-pip install -r requirements.txt
+To install from source you can run:
+```bash
+git clone https://github.com/settylab/2for1separator
+cd 2for1separator
+pip install .
 ```
+
+Optionally, the deconvolution will run in less time and memory if
+[scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation)
+is installed.
 
 ## Usage
 
-Before the deconvolution the data has to be split up into manageable chunks:
+Before the deconvolution, the data has to be split up into manageable chunks:
 ```
-./sep241prep.py [bed files] --out [jobdata pkl file] --memory [max memory target in GB]
+sep241prep [bed files] --out [jobdata pkl file] --memory [max memory target in GB]
 ```
-It is recommended to use approximatly `300` GB or more for `--memory`.
+It is recommended to use approximately `20` GB or more for `--memory`.
+This specifies the targeted memory demand during the subsequent deconvolution.
 
-The ouptut of the function reports the number of seperate work chunks
+The output of the function reports the number of separate work chunks
 and suggests subsequent calls for the deconvolution.
 The number of slurm jobs is also stored in an additional output file named
 with `[jobdata pkl file].njobs`.
@@ -56,35 +64,41 @@ reconstructed through the deconvolution.
 
 To produce bigwig files from the deconvolution results run
 ```
-./sep241mkbw.py [jobdata pkl file] [chrom sizes file]
+sep241mkbw [jobdata pkl file] [chrom sizes file]
 ```
 The chomosome sizes file needs to have two columns with `chromosome name` and
 `size in bases`
 (see [bigWIG format](https://genome.ucsc.edu/goldenPath/help/bigWig.html)).
 
 The produced bigWIG files may be used for downstream analysis such as peak
-calling. To use the 2for1seperator cut-likelyhood-based peak calling
-with overlap idendification run:
+calling. To use the 2for1seperator cut-likelihood-based peak calling
+with overlap identification run:
 ```
-./sep241peakcalling.py [jobdata pkl file]
+sep241peakcalling [jobdata pkl file]
 ```
-Note, that `sep241peakcalling.py` does not required the prior conversion
+Note, that `sep241peakcalling` does not require the prior conversion
 to bigWIG but instead uses the raw deconvolution output.
 
-To write out the target specific likelihoods of each cut you can run
+To write out the target specific likelihoods of each genomic cut you can run
 ```
-./sep241events.py [jobdata pkl file]
+sep241events [jobdata pkl file]
 ```
 
-For more information pass `--help` to the respective script.
+For more information pass `--help` to the respective commands.
 
 ## Visualization
 
 Output files are bigwigs and bed-files. These can be visualised
-with softwra etools such as the
+with software tools such as the
 [IGV Browser](https://software.broadinstitute.org/software/igv/)
 or
 [JBrowser 2](https://jbrowse.org/jb2/).
-Vizualization of intermediate results are currently only possible
+Visualization of intermediate results are currently only possible
 if intermediate function calls within the supplied scripts are
 reproduced in a python environment.
+
+## Citation
+
+> Janssens, D.H., Otto, D.J., Meers, M.P. et al. CUT&Tag2for1: a modified method
+> for simultaneous profiling of the accessible and silenced regulome in single 
+> cells. Genome Biol 23, 81 (2022). https://doi.org/10.1186/s13059-022-02642-w
