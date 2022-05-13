@@ -9,10 +9,7 @@ originate from one target or the other. The result is a set of cut density
 tracks that represent the estimated number of cuts induced by the two
 antibodies used in the CUT&Tag2for1 experiment.
 
-![Schmenatic](https://github.com/settylab/2for1separator/raw/main/schematic.jpg?raw=true "Schematic")
-
-## Documentation
-Insert a link to the documentation here. Only shown in GitHub Readme.
+![Schematic](https://github.com/settylab/2for1separator/raw/main/schematic.jpg?raw=true "Schematic")
 
 ## Installation
 
@@ -53,7 +50,7 @@ numbers. If you are using slurm you can rerun the slurm jobs of only
 the specified jobs by passing the list with the `--array=` parameter
 of the `sbatch` command.
 
-### Exporting Results
+## Exporting Results
 
 If not specified otherwise through the `--out` argument, all outputs are placed
 into the same directory with the `[jobdata pkl file]`. Most outputs contain
