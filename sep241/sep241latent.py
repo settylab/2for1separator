@@ -6,24 +6,7 @@ from sep241covariance import SparseCov
 from scipy.sparse.linalg import spsolve, splu
 from scipy.linalg import LinAlgError
 from scipy.sparse import diags
-
-try:
-    from sksparse.cholmod import cholesky as cmod
-    use_sksparse = True
-    def cholesky(A):
-        factor = cmod(A, mode='simplicial', ordering_method='natural')
-        return factor.L()
-
-except ModuleNotFoundError:
-    use_sksparse = False
-    def cholesky(A): # https://gist.github.com/omitakahiro/c49e5168d04438c5b20c921b928f1f5d
-        n = A.shape[0]
-        LU = splu(A, diag_pivot_thresh=0, permc_spec='NATURAL')
-
-        if (LU.perm_r == np.arange(n)).all() and (LU.U.diagonal() > 0).all():
-            return LU.L.dot(diags(LU.U.diagonal() ** 0.5))
-        else:
-            raise LinAlgError('Matrix is not positive definite.')
+from sksparse.cholmod import cholesky
 
 
 class SparseLatent:
@@ -56,8 +39,8 @@ class SparseLatent:
 
         if jitter == 'auto':
             jitter = self.cov_func.auto_jitter(cov)
-        cov.setdiag(cov.diagonal() + jitter)
-        L = cholesky(cov)
+        factor = cholesky(cov, beta=jitter, mode='simplicial', ordering_method='natural')
+        L = factor.L()
         initval = self._format_initval(initval, L)
         return size, mu, L, initval
 

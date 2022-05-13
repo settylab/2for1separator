@@ -25,10 +25,6 @@ cd 2for1separator
 pip install .
 ```
 
-Optionally, the deconvolution will run in less time and memory if
-[scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation)
-is installed.
-
 ## Usage
 
 Before the deconvolution, the data has to be split up into manageable chunks:

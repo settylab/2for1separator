@@ -13,7 +13,7 @@ import theano.tensor as at
 
 from sep241util import setup_logging, logger, format_cuts
 from sep241covariance import SparseCov
-from sep241latent import SparseLatent, use_sksparse
+from sep241latent import SparseLatent
 from pymc3.theanof import inputvars
 from pymc3.model import Point, modelcontext
 from pymc3.blocking import DictToArrayBijection, ArrayOrdering
@@ -234,10 +234,6 @@ def deconvolve(args):
     logger.info("Limiting computation to %i cores.", cores)
     threadpool_limits(limits=int(cores))
     os.environ["NUMEXPR_MAX_THREADS"] = str(cores)
-
-    if not use_sksparse:
-        logger.info("""Scikit-sparse is not found; defaulting to a more expensive
-                    cholesky decomposition implementation.""")
     logger.info("Preparing dirichlet prior.")
     c1_prior = np.array(args.c1_dirichlet_prior)
     if len(c1_prior) < 2:
