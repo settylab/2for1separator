@@ -15,7 +15,7 @@ from sep241util import read_job_data, read_results, write_bed
 from sep241util import MissingData
 from sep241util import posterior_mode_weights
 from sep241util import check_length_distribution_flip
-from sep241deconvolve import get_length_dist_modes
+from sep241model import get_length_dist_modes
 
 
 desc = """Export deconvolution results for each individual event in the data.

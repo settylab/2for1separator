@@ -12,7 +12,6 @@ setup(
         'console_scripts': [
             'sep241prep = sep241.sep241prep:main',
             'sep241deconvolve = sep241.sep241deconvolve:main',
-            'sep241deconvolve_sbatch = sep241.sep241deconvolve_sbatch:main',
             'sep241peakcalling = sep241.sep241peakcalling:main',
             'sep241events = sep241.sep241events:main',
             'sep241mkbw = sep241.sep241mkbw:main',
