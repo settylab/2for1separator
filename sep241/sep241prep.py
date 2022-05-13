@@ -924,7 +924,7 @@ def prep(args):
         f"""
     Preparation finished and there are {n_wg:,} work chunks (0-{n_wg-1}).
     Run deconvolution using SLURM:
-        sbatch --array=0-{n_wg-1} --mem={args.memory_target} <(sep241deconvolve_sbatch) {args.out}
+        sbatch --array=0-{n_wg-1} --mem={args.memory_target}G <(sep241deconvolve_sbatch) {args.out}
     Run in bash or zsh:
         for wc in $(seq 0 {n_wg-1}); do
             sep241deconvolve {args.out} --workchunk $wc
