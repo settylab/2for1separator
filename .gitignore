@@ -4,3 +4,4 @@ sep241tmp/
 slurm*.out
 sep241.egg-info/
 docs/build/
+build/
