@@ -1,8 +1,12 @@
 from setuptools import setup
 
+# read the contents of your README file
+from pathlib import Path
+this_directory = Path(__file__).parent
+
 setup(
     name='sep241',
-    version='v0.3',
+    version='v0.4.2',
     description='Deconvolve CUT&Tag 2for1 data.',
     url='https://github.com/settylab/2for1separator',
     author='Setty Lab',
@@ -34,11 +38,13 @@ setup(
                       'scikit-sparse==0.4.6',
                       ],
     classifiers=[
-        'Development Status :: 1 - Planning',
+        'Development Status :: 4 - Beta',
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Operating System :: POSIX :: Linux',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
     ],
+    long_description = (this_directory / "Readme.md").read_text(),
+    long_description_content_type='text/markdown',
 )

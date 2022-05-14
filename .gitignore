@@ -5,3 +5,4 @@ slurm*.out
 sep241.egg-info/
 docs/build/
 build/
+dist/
