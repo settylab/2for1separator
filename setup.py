@@ -6,11 +6,11 @@ this_directory = Path(__file__).parent
 
 setup(
     name='sep241',
-    version='v0.4.2',
+    version='0.4.3',
     description='Deconvolve CUT&Tag 2for1 data.',
     url='https://github.com/settylab/2for1separator',
     author='Setty Lab',
-    author_email='',
+    author_email='msetty@fredhutch.org',
     license='GNU General Public License v3.0',
     entry_points={
         'console_scripts': [
@@ -45,6 +45,6 @@ setup(
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
     ],
-    long_description = (this_directory / "Readme.md").read_text(),
+    long_description = (this_directory / "README.md").read_text(),
     long_description_content_type='text/markdown',
 )

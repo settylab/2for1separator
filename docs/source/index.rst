@@ -22,7 +22,7 @@
     Github Repo <https://github.com/settylab/2for1separator>
 
 .. mdinclude::
-   ../../Readme.md
+   ../../README.md
 
 
 Indices
