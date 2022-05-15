@@ -21,7 +21,7 @@ TBA
 
 Please make sure `python` points to a Python 3.9+ interpreter
 and [libcurl](https://curl.haxx.se) is installed.
-We highly recommed to install install
+We highly recommed to install
 [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation)
 to significantly reduce memory demand and runtime.
 Finally, inslatt 2for1separator with
