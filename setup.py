@@ -6,7 +6,7 @@ this_directory = Path(__file__).parent
 
 setup(
     name='sep241',
-    version='0.4.3',
+    version='0.4.5',
     description='Deconvolve CUT&Tag 2for1 data.',
     url='https://github.com/settylab/2for1separator',
     author='Setty Lab',
@@ -35,7 +35,6 @@ setup(
                       'plotnine==0.8.0',
                       'scikit-learn==0.24.2',
                       'gtfparse==1.2.1',
-                      'scikit-sparse==0.4.6',
                       ],
     classifiers=[
         'Development Status :: 4 - Beta',
