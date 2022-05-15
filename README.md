@@ -24,7 +24,7 @@ and [libcurl](https://curl.haxx.se) is installed.
 We highly recommed to install
 [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation)
 to significantly reduce memory demand and runtime.
-Finally, inslatt 2for1separator with
+Finally, install 2for1separator with
 ```bash
 pip install sep241
 ```
