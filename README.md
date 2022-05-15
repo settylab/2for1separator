@@ -29,7 +29,7 @@ Finally, inslatt 2for1separator with
 pip install sep241
 ```
 
-## From source
+### From source
 To install from source you can run:
 ```bash
 git clone https://github.com/settylab/2for1separator
