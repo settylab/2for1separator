@@ -1,3 +1,4 @@
 m2r2
 sphinxcontrib-autoprogram
 sphinx-mdinclude
+furo
