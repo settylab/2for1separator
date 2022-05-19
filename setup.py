@@ -35,6 +35,7 @@ setup(
                       'plotnine==0.8.0',
                       'scikit-learn==0.24.2',
                       'gtfparse==1.2.1',
+                      'scikit-sparse==0.4.6',
                       ],
     classifiers=[
         'Development Status :: 4 - Beta',
