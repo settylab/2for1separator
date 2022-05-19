@@ -5,11 +5,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=2-00:00:00
 
-
 import os
 import argparse
-
-from sep241.sep241util import set_flag
 
 
 desc = """Deconvolve CUT&TAG 2for1. Uses the output of the sep241prep step.
@@ -180,6 +177,39 @@ parser.add_argument(
     type=str,
     metavar="dir",
 )
+
+
+def set_flag(flag, value=None):
+    """
+    Sets or overwrites the theano `flag` in the environment variable 'THEANO_FLAGS'.
+    :param flag: The flag name that is to be overwritten or set.
+    :param value: The value to be assigned to the flag. If it is
+        `None` then `flag` will be pasted as is into 'THEANO_FLAGS'.
+    :return: The new value of 'THEANO_FLAGS'.
+    """
+    if not isinstance(flag, str):
+        raise TypeError("The argument `flag` needs to be a string.")
+    flagString = os.getenv("THEANO_FLAGS")
+
+    if value is None:
+        if flagString:
+            flag = flagString + "," + flag
+        os.environ["THEANO_FLAGS"] = flag
+        return newFlagString
+
+    if not isinstance(value, str):
+        raise TypeError("The argument `value` needs to be a string or `None`.")
+
+    if flagString:
+        oldFlags = flagString.split(",")
+    else:
+        oldFlags = []
+    flagTag = flag + "="
+    newFlags = [s for s in oldFlags if flagTag not in s]
+    newFlags.append(flagTag + value)
+    newFlagString = ",".join(newFlags)
+    os.environ["THEANO_FLAGS"] = newFlagString
+    return newFlagString
 
 
 def main():
