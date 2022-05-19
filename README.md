@@ -11,6 +11,10 @@ antibodies used in the CUT&Tag2for1 experiment.
 
 ![Schematic](https://github.com/settylab/2for1separator/raw/main/schematic.jpg?raw=true "Schematic")
 
+## Documentation
+
+[https://2for1separator.readthedocs.io/en/latest/](https://2for1separator.readthedocs.io/en/latest/)
+
 ## Installation
 
 ### Using conda

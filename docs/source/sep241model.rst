@@ -1,5 +1,5 @@
 sep241model module
-=================
+==================
 
 .. automodule:: sep241model
    :members:
