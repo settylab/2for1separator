@@ -6,8 +6,10 @@ from sep241covariance import SparseCov
 from scipy.sparse.linalg import spsolve, splu
 from scipy.linalg import LinAlgError
 from scipy.sparse import diags
-from sksparse.cholmod import cholesky
-
+try:
+    from sksparse.cholmod import cholesky
+except Exception: 
+    pass
 
 class SparseLatent:
     R"""
