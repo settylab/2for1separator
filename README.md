@@ -17,18 +17,15 @@ antibodies used in the CUT&Tag2for1 experiment.
 
 ## Installation
 
+Please make sure `python` points to a Python 3.9+ interpreter.
+
 ### Using conda
 
 TBA
 
 ### Using pip
 
-Please make sure `python` points to a Python 3.9+ interpreter
-and [libcurl](https://curl.haxx.se) is installed.
-We highly recommed to install
-[scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation)
-to significantly reduce memory demand and runtime.
-Finally, install 2for1separator with
+To install with pip you can run:
 ```bash
 pip install sep241
 ```
@@ -40,6 +37,10 @@ git clone https://github.com/settylab/2for1separator
 cd 2for1separator
 pip install .
 ```
+
+### Requirements
+
+When installing with pip or from source, [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation) and [pyBigWig](https://github.com/deeptools/pyBigWig) are not automatically installed. scikit-sparse is required for sep241deconvolve and pyBigWig is required for sep241mkbw.
 
 ## Usage
 
