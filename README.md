@@ -40,7 +40,7 @@ pip install .
 
 ### Requirements
 
-When installing with pip or from source, [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation) and [pyBigWig](https://github.com/deeptools/pyBigWig) are not automatically installed. scikit-sparse is required for sep241deconvolve and pyBigWig is required for sep241mkbw.
+When installing with pip or from source, [scikit-sparse](https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation) and [pyBigWig](https://github.com/deeptools/pyBigWig#installation) are not automatically installed. scikit-sparse is required for sep241deconvolve and pyBigWig is required for sep241mkbw.
 
 ## Usage
 
