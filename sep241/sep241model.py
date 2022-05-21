@@ -13,7 +13,7 @@ import theano.tensor as at
 
 from sep241util import setup_logging, logger, format_cuts
 from sep241covariance import SparseCov
-from sep241latent import SparseLatent
+from sep241latent import SparseLatent, sk_error
 from pymc3.theanof import inputvars
 from pymc3.model import Point, modelcontext
 from pymc3.blocking import DictToArrayBijection, ArrayOrdering
@@ -221,6 +221,9 @@ def gradient1_custom(f, v):
 
 def deconvolve(args):
     setup_logging(args.logLevel, args.logfile)
+    if sk_error:
+        raise sk_error
+
     logger.info("Running whole_genome_deconvolve_job with arguments:")
     logger.info(args)
     logger.debug("Theano flags: %s", os.getenv("THEANO_FLAGS"))

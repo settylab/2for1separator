@@ -8,8 +8,10 @@ from scipy.linalg import LinAlgError
 from scipy.sparse import diags
 try:
     from sksparse.cholmod import cholesky
-except ModuleNotFoundError: 
-    pass
+    sk_error = False
+except ImportError as err:
+    sk_error = err
+
 
 class SparseLatent:
     R"""

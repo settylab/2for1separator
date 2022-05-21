@@ -7,7 +7,12 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 from threadpoolctl import threadpool_limits
-import pyBigWig
+
+try:
+    import pyBigWig
+    pbw_error = False
+except ImportError as err:
+    pbw_error = err
 
 from sep241util import logger, setup_logging
 from sep241util import read_job_data, read_results, read_region_string
@@ -257,6 +262,9 @@ def make_bigwigs(
 def main():
     args = parser.parse_args()
     setup_logging(args.logLevel, args.logfile)
+    if pbw_error:
+        raise pbw_error
+
     logger.info("Reading jobdata.")
     workdata = read_job_data(args.jobdata)
     logger.info("Reading deconvolution results.")

@@ -29,7 +29,6 @@ setup(
                       'pymc3==3.11.4',
                       'KDEpy==1.1.0',
                       'tqdm==4.61.1',
-                      'pyBigWig==0.3.18',
                       'pytabix==0.1',
                       'threadpoolctl==2.2.0',
                       'plotnine==0.8.0',
