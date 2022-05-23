@@ -3,7 +3,6 @@ import os
 path = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(path)
 
-import sep241
 import sep241.sep241util
 import sep241.sep241covariance
 import sep241.sep241latent
