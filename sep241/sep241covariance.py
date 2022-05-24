@@ -36,7 +36,7 @@ class SparseCov:
 
     def __init__(self, cov_func, threshold=THRESHOLD_DEFAULT):
         if threshold < 0:
-            raise ValueError('Threshold must be positive.')
+            raise ValueError('Threshold must be >= 0.')
 
         a = at.dvector()
         a.tag.test_value = np.ones(2)
