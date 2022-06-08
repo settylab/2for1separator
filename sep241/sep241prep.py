@@ -61,12 +61,12 @@ subdivisions of the used intervals.
 parser = argparse.ArgumentParser(description=desc)
 parser.add_argument(
     "fragment_files",
-    metavar="fragment-file.bed.gz",
+    metavar="fragment-file.bed",
     type=str,
     nargs="+",
     help="""Input
         `bed files <http://uswest.ensembl.org/info/website/upload/bed.html>`_.
-        If ``--bc-from-file`` is set, the fourth column should contain the cell
+        If ``--bc-from-file`` is not set, the fourth column should contain the cell
         barcodes. Bed files can be compressed using gzip (``*.gz``) or
         bzip2 (``*.gz2``).""",
 )
@@ -96,8 +96,7 @@ parser.add_argument(
 parser.add_argument(
     "--barcode",
     help="""Specify a regular expression to extract cell barcodes.
-    E.g. 'file_([ACGT]*).bed' will extract 'ACCGGC' from 'something_file_ACCGGC_other'.
-    Alternatively, pass 'from_bed' to use the fourth column of the bed-file as barcode.
+    E.g. 'file_([ACGT]*)' will extract 'ACCGGC' from 'something_file_ACCGGC_other'.
     If set to empty '', no barcode is saved. (default='(.*)')
     """,
     type=str,
