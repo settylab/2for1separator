@@ -45,7 +45,7 @@ class SparseCov:
         # distance between x and y, notated k(d). Here the covariance function is structured so
         # it transforms a vector of distances.
         with warnings.catch_warnings():
-            # pymc covariance functions interpret symbolic matrices as having the wrong input
+            # pymc3 covariance functions interpret symbolic matrices as having the wrong input
             # dimensions, throwing an unnecesssary warning.
             warnings.simplefilter("ignore")
             self.cov_func = theano.function([a], cov_func(np.array([[0.0]]), a.reshape((-1, 1))).flatten())
@@ -119,8 +119,7 @@ class SparseCov:
             Function input values.
         """
         n = infer_shape(X)
-        
-        # Side left to not include the exact threshold.
+
         rightspine = np.searchsorted(X, X + self.inv, side='left') - np.arange(1, n + 1)
         reverse = -np.flip(X)
         leftspine = np.flip(np.searchsorted(reverse, reverse + self.inv, side='left') - np.arange(1, n + 1))
@@ -175,8 +174,7 @@ class SparseCov:
         :rtype: float
         """
         # A Hermitian strictly diagonally dominant matrix with non-negative diagonals
-        # is PD. Source: https://en.wikipedia.org/wiki/Diagonally_dominant_matrix.
-        # Consider the sparsification matrix. It has zeros wherever we leave
+        # is PD. Consider the sparsification matrix. It has zeros wherever we leave
         # the original matrix alone and negative values where we set the original
         # matrix to zero, which can only be in off diagonal entries. If we set the
         # diagonal of the sparsification matrix greater than the magnitude of the
