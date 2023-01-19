@@ -692,6 +692,8 @@ def get_intervals_by_kde(events, min_density, selection_padding, kde_bw=200):
             logger.info(f"Finding intervals based on KDE.")
             data_idx = density > min_density
         starts, ends = get_intervals(data_idx, selection_padding)
+        starts = np.where(starts<0, 0, starts)
+        ends = np.where(ends>len(grid), len(grid), ends)
         gstarts = grid[starts]
         gends = grid[ends - 1]
         intervals_small[seqname] = {
