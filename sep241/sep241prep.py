@@ -833,7 +833,7 @@ def prep(args):
     from sep241model import get_cov_functions
 
     out_path, _ = os.path.split(args.out)
-    if not os.path.isdir(out_path):
+    if out_path and not os.path.isdir(out_path):
         logger.info("Making directory %s", out_path)
         os.mkdir(out_path)
     if not args.cores:
