@@ -571,27 +571,33 @@ def assign_workchunk(result_df, max_mem_per_group=200, seed=None, progress=True)
     for idx in interval_idxs:
         interval_work = result_df["memory"][idx]
         if interval_work > max_mem_per_group:
+            # put this into its own chunk
+            group_idx = len(work_per_group) - 1
+            if work_per_group[group_idx] > 0:
+                group_idx += 1
+                work_per_group.append(interval_work)
+            else:
+                work_per_group[group_idx] += interval_work
+            grouping[idx] = group_idx
+
+            # make warning
             seqname = result_df["seqname"][idx]
             start = result_df["start"][idx]
             end = result_df["end"][idx]
             pec = interval_work / max_mem_per_group
-            group_idx = len(work_per_group) + 1
             logger.warning(
                 f"{seqname}:{start:,}-{end:,} has a very high cut concentration and "
                 f"work chunk {group_idx} "
                 f"will consume {pec:.2%} of the configured memory. "
                 "Lower --max-locs and set lower --interval-padding to allow for smaller intervals."
             )
-            grouping[idx] = group_idx
-            work_per_group.append(interval_work)
+
             continue
-        fits = False
         for group_idx, work in enumerate(work_per_group):
             new_work = work + interval_work
             if new_work < max_mem_per_group:
-                fits = True
                 break
-        if not fits:
+        else: # no break
             group_idx += 1
             work_per_group.append(0)
             new_work = interval_work
