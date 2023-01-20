@@ -254,6 +254,10 @@ class SparseCov:
         data, indices, indptr = self._align(X)
 
         # Transform the distances with the covariance function
-        data = self.cov_func(data)
+        # Since very large data arrays cause the theano function to return
+        # only zeros, we apply it only on the set of unqiue distances.
+        udata, idx = np.unique(data, return_inverse=True)
+        cov_values = self.cov_func(udata)
+        data = cov_values[idx]
 
         return csc_matrix((data, indices, indptr))
