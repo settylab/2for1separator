@@ -182,13 +182,15 @@ def make_model(
                     dat["cuts"]["location"]
                 )
                 lengths = dat["cuts"]["length"].values
+                ncuts = len(dat["cuts"])
+                nloc = len(unique_locations)
                 logger.info(
-                    "Parameterizing interval (%d/%d) %s with %i cuts in %i locations.",
+                    "Parameterizing interval (%d/%d) %s with %s cuts in %s locations.",
                     i + 1,
                     n_intervals,
                     name,
-                    len(dat["cuts"]),
-                    len(unique_locations),
+                    f"{ncuts:,}",
+                    f"{nloc:,}",
                 )
 
                 f_c1 = gp_c1.prior(f"f_c1_{name}", X=unique_locations[:, None])
