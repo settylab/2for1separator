@@ -217,7 +217,7 @@ def main():
     tmpdir = os.getenv("TMPDIR")
     if args.compiledir is not None:
         compileDir = args.compiledir
-    elif tmpdir is None:
+    elif tmpdir is None or len(tmpdir)==0:
         compileDir = f"./sep241tmp/{args.jobdata}/deconvolve/{args.workchunk}"
     else:
         compileDir = os.path.join(tmpdir, f"sep241tmp/{args.jobdata}/deconvolve/{args.workchunk}")
