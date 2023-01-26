@@ -214,7 +214,7 @@ def make_bigwigs(
             continue
         signal_c1 = np.exp(log_signal_c1)
         signal_c2 = np.exp(log_signal_c2)
-        base_name, _ = name.split(".")
+        base_name = name[:name.rindex('.')]
         if location_list and last_name != base_name:
             generate_entry(
                 last_seq,
