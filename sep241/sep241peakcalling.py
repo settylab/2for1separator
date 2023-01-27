@@ -228,7 +228,7 @@ def make_interpolation_jobs(workdata, map_results, c1_sigma, c2_sigma, step_size
 
         signal_c1_list_global.append(signal_c1)
         signal_c2_list_global.append(signal_c2)
-        base_name, _ = name.split(".")
+        base_name = name[:name.rindex('.')]
         if location_list and last_name != base_name:
             jobs.append(
                 (
