@@ -239,7 +239,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--blacklist",
-    help="Bed file of genomic regions to exclude from the deconvolution.",
+    help="Compressed bed file with tabix index of genomic regions to exclude from the deconvolution.",
     type=str,
     default=None,
     metavar="file.bed.gz2",
@@ -307,9 +307,9 @@ def filter_sort_events(events, blacklist=None, blacklisted_sequences=set(), prog
         if blacklist:
             records = tb.querys(seqname)
             loc_idx = 0
-            for seq, start, stop, stype in records:
-                nstart = int(start)
-                nstop = int(stop)
+            for r in records:
+                nstart = int(r[1])
+                nstop = int(r[2])
                 for loc_idx in range(loc_idx, n):
                     location = locations[loc_idx]
                     if location > nstop:
@@ -336,9 +336,9 @@ def filter_intervals(events, blacklist, blacklisted_sequences=set(), progress=Tr
         rows = local_events.iterrows()
         _, row = next(rows)
         try:
-            for seq, start, stop, stype in records:
-                nstart = int(start)
-                nstop = int(stop)
+            for r in records:
+                nstart = int(r[1])
+                nstop = int(r[2])
                 while row["start"] < nstop:
                     if row["end"] < nstart:
                         filtered_list.append(row)
