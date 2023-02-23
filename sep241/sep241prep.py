@@ -318,7 +318,7 @@ def filter_sort_events(
         for _, row in records.iterrows():
             for loc_idx in range(loc_idx, n):
                 location = locations[loc_idx]
-                if location > row["stop"]:
+                if location > row["end"]:
                     break
                 if row["start"] <= location:
                     blacklisted[loc_idx] = True
