@@ -286,10 +286,19 @@ class SubdivisionError(Exception):
     pass
 
 
-def filter_sort_events(events, blacklist=None, blacklisted_sequences=set(), progress=True):
+def read_blacklist(blacklist):
+    bl = pd.read_csv(blacklist, header=None, sep="\t")
+    bl = bl.rename(columns={0: "seqname", 1: "start", 2: "end"})
+    bl_dict = {seq: d.sort_values("start") for seq, d in bl.groupby("seqname")}
+    return bl_dict
+
+
+def filter_sort_events(
+    events, blacklist=None, blacklisted_sequences=set(), progress=True
+):
     grouped = events.groupby("seqname")
     if blacklist:
-        tb = tabix.open(blacklist)
+        bl_dict = read_blacklist(blacklist)
 
     filtered_list = list()
 
@@ -304,18 +313,15 @@ def filter_sort_events(events, blacklist=None, blacklisted_sequences=set(), prog
         locations = local_events["location"].values
         n = len(locations)
         blacklisted = np.zeros(n, dtype=bool)
-        if blacklist:
-            records = tb.querys(seqname)
-            loc_idx = 0
-            for r in records:
-                nstart = int(r[1])
-                nstop = int(r[2])
-                for loc_idx in range(loc_idx, n):
-                    location = locations[loc_idx]
-                    if location > nstop:
-                        break
-                    if nstart <= location:
-                        blacklisted[loc_idx] = True
+        records = bl_dict.get(seqname, pd.DataFrame())
+        loc_idx = 0
+        for _, row in records.iterrows():
+            for loc_idx in range(loc_idx, n):
+                location = locations[loc_idx]
+                if location > row["stop"]:
+                    break
+                if row["start"] <= location:
+                    blacklisted[loc_idx] = True
         filtered_list.append(local_events.loc[~blacklisted, :])
     events = pd.concat(filtered_list, axis=0)
     return events
@@ -323,7 +329,7 @@ def filter_sort_events(events, blacklist=None, blacklisted_sequences=set(), prog
 
 def filter_intervals(events, blacklist, blacklisted_sequences=set(), progress=True):
     grouped = events.groupby("seqname")
-    tb = tabix.open(blacklist)
+    bl_dict = read_blacklist(blacklist)
 
     filtered_list = list()
 
@@ -331,16 +337,14 @@ def filter_intervals(events, blacklist, blacklisted_sequences=set(), progress=Tr
     for seqname, local_events in tqdm(grouped, desc="sequence", disable=~progress):
         if seqname in blacklisted_sequences:
             continue
-        records = tb.querys(seqname)
+        records = bl_dict.get(seqname, pd.DataFrame())
         local_events = local_events.sort_values("start")
         rows = local_events.iterrows()
         _, row = next(rows)
         try:
-            for r in records:
-                nstart = int(r[1])
-                nstop = int(r[2])
-                while row["start"] < nstop:
-                    if row["end"] < nstart:
+            for _, blrow in records.iterrows():
+                while row["start"] < blrow["end"]:
+                    if row["end"] < blrow["start"]:
                         filtered_list.append(row)
                     _, row = next(rows)
             for i in range(len(local_events)):
@@ -365,7 +369,9 @@ def full_kde_grid(x, xmin=None, xmax=None):
     return grid
 
 
-def get_kde(cut_locations, kde_bw=500, kernel="gaussian", xmin=None, xmax=None, grid=None):
+def get_kde(
+    cut_locations, kde_bw=500, kernel="gaussian", xmin=None, xmax=None, grid=None
+):
     if grid is None:
         grid = full_kde_grid(cut_locations, xmin, xmax)
     kernel = FFTKDE(kernel=kernel, bw=kde_bw)
@@ -597,7 +603,7 @@ def assign_workchunk(result_df, max_mem_per_group=200, seed=None, progress=True)
             new_work = work + interval_work
             if new_work < max_mem_per_group:
                 break
-        else: # no break
+        else:  # no break
             group_idx += 1
             work_per_group.append(0)
             new_work = interval_work
@@ -698,11 +704,11 @@ def get_intervals_by_kde(events, min_density, selection_padding, kde_bw=200):
             logger.info(f"Finding intervals based on KDE.")
             data_idx = density > min_density
         starts, ends = get_intervals(data_idx, selection_padding)
-        if len(ends)==0:
+        if len(ends) == 0:
             logger.info(f"Skipping {seqname} due to lack of coverage.")
             continue
-        starts = np.where(starts<0, 0, starts)
-        ends = np.where(ends>len(grid), len(grid), ends)
+        starts = np.where(starts < 0, 0, starts)
+        ends = np.where(ends > len(grid), len(grid), ends)
         gstarts = grid[starts]
         gends = grid[ends - 1]
         intervals_small[seqname] = {
@@ -832,7 +838,7 @@ def interval_cost(dat, cov1, cov2):
     return 1e-6 * ncuts + 2.5e-5 * nlocs + 8e-9 * nentries1 + 8e-9 * nentries2 + 1.2e-2
 
 
-def approximate_memory_demand(result_df, cov_c1, cov_c2): 
+def approximate_memory_demand(result_df, cov_c1, cov_c2):
     memory = [interval_cost(dat, cov_c1, cov_c2) for name, dat in result_df.iterrows()]
     result_df["memory"] = pd.Series(index=result_df.index, data=memory, name="memory")
     return result_df
@@ -924,7 +930,9 @@ def prep(args):
     )
 
     logger.info("Estimating memory demand.")
-    cov_c1, cov_c2 = get_cov_functions(args.c1_cov, args.c2_cov, args.sparsity_threshold)
+    cov_c1, cov_c2 = get_cov_functions(
+        args.c1_cov, args.c2_cov, args.sparsity_threshold
+    )
     result_df = approximate_memory_demand(result_df, cov_c1, cov_c2)
 
     assign_workchunk(result_df, max_mem_per_group=args.memory_target, seed=args.seed)
@@ -959,6 +967,6 @@ def main():
             set_flag("base_compiledir", directory)
             prep(args)
 
-if __name__ == '__main__':
-    main()
 
+if __name__ == "__main__":
+    main()
