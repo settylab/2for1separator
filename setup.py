@@ -25,7 +25,7 @@ setup(
     packages=['sep241'],
     install_requires=['numpy==1.21.5',
                       'pandas==1.2.5',
-                      'scipy==1.6.3',
+                      'scipy==1.11.1',
                       'pymc3==3.11.4',
                       'KDEpy==1.1.0',
                       'tqdm==4.61.1',
